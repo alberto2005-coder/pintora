@@ -1,0 +1,54 @@
+{
+  "name": "pintora",
+  "version": "0.1.0",
+  "description": "Editor de imágenes con capas, selecciones, pinceles, filtros y modos de mezcla.",
+  "main": "electron/main.js",
+  "license": "GPL-3.0-or-later",
+  "author": "Pintora",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test test/engine.test.js",
+    "start": "node build.mjs && electron .",
+    "dist:win": "node build.mjs && electron-builder --win nsis portable",
+    "dist:mac": "node build.mjs && electron-builder --mac dmg",
+    "dist:linux": "node build.mjs && electron-builder --linux AppImage"
+  },
+  "devDependencies": {
+    "electron": "^44.9.0",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2"
+  },
+  "build": {
+    "appId": "app.pintora.editor",
+    "productName": "Pintora",
+    "files": [
+      "electron/**/*",
+      "dist/pintora.html",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false
+    }
+  },
+  "dependencies": {
+    "ag-psd": "^33.0.0",
+    "gifenc": "^1.0.3",
+    "omggif": "^1.0.10",
+    "utif": "^3.1.0"
+  },
+  "allowScripts": {
+    "electron-winstaller@5.4.0": true,
+    "esbuild@0.28.2": true
+  }
+}
