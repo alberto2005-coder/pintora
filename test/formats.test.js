@@ -109,3 +109,18 @@ test('XCF round trip keeps layers, pixels, opacity and offsets', async () => {
   assert.equal(m.left, 1);
   assert.deepEqual(Array.from(m.data.slice(0, 4)), [0, 0, 255, 255]);
 });
+
+test('16-bit XCF export keeps layers and 16-bit precision', async () => {
+  const data16 = new Uint16Array([1, 256, 65535, 65535, 32768, 8192, 4096, 32768]);
+  const buf = F.writeXcf({
+    w: 2, h: 1, depth: 16,
+    layers: [{ name: 'Profunda', data16, opacity: 0.5, visible: true, mode: 'normal' }]
+  });
+  const xcf = await F.readXcf(buf);
+  assert.equal(xcf.w, 2);
+  assert.equal(xcf.h, 1);
+  assert.equal(xcf.depth, 16);
+  assert.equal(xcf.layers.length, 1);
+  assert.equal(xcf.layers[0].name, 'Profunda');
+  assert.ok(Math.abs(xcf.layers[0].opacity - 0.5) < 0.02);
+});

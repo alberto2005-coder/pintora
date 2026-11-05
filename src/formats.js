@@ -204,15 +204,17 @@
   function xcfU32(a, n) { a.push((n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255); }
   function xcfI32(a, n) { xcfU32(a, n < 0 ? n + 0x100000000 : n); }
   function xcfPatchU32(a, at, n) { a[at] = (n >>> 24) & 255; a[at + 1] = (n >>> 16) & 255; a[at + 2] = (n >>> 8) & 255; a[at + 3] = n & 255; }
+  function xcfU64(a, n) { xcfU32(a, Math.floor(n / 0x100000000)); xcfU32(a, n >>> 0); }
+  function xcfPatchU64(a, at, n) { xcfPatchU32(a, at, Math.floor(n / 0x100000000)); xcfPatchU32(a, at + 4, n >>> 0); }
   function xcfProp(a, type, data) { xcfU32(a, type); xcfU32(a, data.length); a.push(...data); }
 
-  function xcfRleChannel(data, w, h, channel) {
-    const out = [], n = w * h;
+  function xcfRlePlane(data, n, plane, bpp) {
+    const out = [];
     let i = 0;
     while (i < n) {
-      const v = data[i * 4 + channel];
+      const v = data[i * bpp + plane];
       let run = 1;
-      while (i + run < n && run < 32767 && data[(i + run) * 4 + channel] === v) run++;
+      while (i + run < n && run < 32767 && data[(i + run) * bpp + plane] === v) run++;
       if (run >= 2) {
         if (run <= 127) out.push(run - 1, v);
         else { out.push(127, (run >>> 8) & 255, run & 255, v); }
@@ -220,9 +222,9 @@
       } else {
         const lit = [];
         while (i < n && lit.length < 127) {
-          const cv = data[i * 4 + channel];
+          const cv = data[i * bpp + plane];
           let same = 1;
-          while (i + same < n && same < 3 && data[(i + same) * 4 + channel] === cv) same++;
+          while (i + same < n && same < 3 && data[(i + same) * bpp + plane] === cv) same++;
           if (same >= 3 && lit.length) break;
           lit.push(cv); i++;
           if (same >= 3) break;
@@ -233,33 +235,67 @@
     return out;
   }
 
-  function xcfTile(data, layerW, layerH, x0, y0, tw, th) {
+  function xcfTile8(data, layerW, layerH, x0, y0, tw, th) {
     const tile = new Uint8ClampedArray(tw * th * 4);
     for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) {
       const si = ((y + y0) * layerW + x + x0) * 4, di = (y * tw + x) * 4;
       tile[di] = data[si]; tile[di + 1] = data[si + 1]; tile[di + 2] = data[si + 2]; tile[di + 3] = data[si + 3];
     }
     const out = [];
-    for (let ch = 0; ch < 4; ch++) out.push(...xcfRleChannel(tile, tw, th, ch));
+    for (let ch = 0; ch < 4; ch++) out.push(...xcfRlePlane(tile, tw * th, ch, 4));
     return out;
   }
 
-  /** Serialize bottom-to-top editor layers as an XCF file (v001, RGBA, RLE). */
+  function xcfTile16(data, layerW, layerH, x0, y0, tw, th) {
+    const tile = new Uint8Array(tw * th * 8);
+    for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) {
+      const si = ((y + y0) * layerW + x + x0) * 4, di = (y * tw + x) * 8;
+      for (let ch = 0; ch < 4; ch++) {
+        const v = data[si + ch];
+        tile[di + ch * 2] = v >>> 8;
+        tile[di + ch * 2 + 1] = v & 255;
+      }
+    }
+    const out = [];
+    for (let plane = 0; plane < 8; plane++) out.push(...xcfRlePlane(tile, tw * th, plane, 8));
+    return out;
+  }
+
+  /** Serialize bottom-to-top editor layers as an XCF file (RGBA, RLE). 8-bit uses v001; 16-bit uses v011 with 64-bit pointers. */
   function writeXcf(doc) {
+    const depth = doc.depth === 16 ? 16 : 8;
+    const bpp = depth === 16 ? 8 : 4;
+    const ptr64 = depth === 16;
+    const addPtr = (a) => {
+      const at = a.length;
+      if (ptr64) xcfU64(a, 0); else xcfU32(a, 0);
+      return at;
+    };
+    const patchPtr = (a, at, n) => {
+      if (ptr64) xcfPatchU64(a, at, n); else xcfPatchU32(a, at, n);
+    };
     const layers = (doc.layers || []).slice().reverse();
     const header = [];
-    header.push(...xcfBytes('gimp xcf '), ...xcfBytes('v001'), 0);
+    header.push(...xcfBytes('gimp xcf '), ...xcfBytes(ptr64 ? 'v011' : 'v001'), 0);
     xcfU32(header, doc.w); xcfU32(header, doc.h); xcfU32(header, 0);
+    if (ptr64) xcfU32(header, 250); // U16_GAMMA
     xcfU32(header, 0); xcfU32(header, 0); // image property list END
     const layerPtrSlots = [];
-    for (let i = 0; i < layers.length; i++) { layerPtrSlots.push(header.length); xcfU32(header, 0); }
-    xcfU32(header, 0); // layer list terminator
-    xcfU32(header, 0); // channel list terminator
+    for (let i = 0; i < layers.length; i++) layerPtrSlots.push(addPtr(header));
+    addPtr(header); // layer list terminator
+    addPtr(header); // channel list terminator
 
     let total = header.length;
     const chunks = [];
     for (const l of layers) {
-      const w = l.w || doc.w, h = l.h || doc.h, data = l.data;
+      const w = l.w || doc.w, h = l.h || doc.h;
+      const data = depth === 16
+        ? (l.data16 instanceof Uint16Array ? l.data16 : (() => {
+          const a = new Uint16Array(w * h * 4);
+          for (let i = 0; i < a.length; i++) a[i] = (l.data && l.data[i] ? l.data[i] : 0) * 257;
+          return a;
+        })())
+        : (l.data || new Uint8ClampedArray(w * h * 4));
       const name = Array.from(new TextEncoder().encode(l.name || 'Capa')).concat(0);
       const lb = [];
       xcfU32(lb, w); xcfU32(lb, h); xcfU32(lb, 1); xcfU32(lb, name.length); lb.push(...name);
@@ -270,25 +306,26 @@
       xcfProp(lb, 10, (() => { const a = []; xcfU32(a, l.lockAlpha ? 1 : 0); return a; })());
       xcfProp(lb, 17, [1]);
       xcfU32(lb, 0); xcfU32(lb, 0); // END property
-      const hptrSlot = lb.length; xcfU32(lb, 0); xcfU32(lb, 0);
+      const hptrSlot = lb.length; addPtr(lb); addPtr(lb); // hierarchy, mask
       const layerStart = total;
       const hierStart = layerStart + lb.length;
-      const levelStart = hierStart + 16;
-      xcfPatchU32(lb, hptrSlot, hierStart);
+      const levelStart = hierStart + 12 + (ptr64 ? 8 : 4);
+      patchPtr(lb, hptrSlot, hierStart);
 
-      const hier = []; xcfU32(hier, w); xcfU32(hier, h); xcfU32(hier, 4); xcfU32(hier, levelStart);
+      const hier = []; xcfU32(hier, w); xcfU32(hier, h); xcfU32(hier, bpp);
+      const lptrSlot = addPtr(hier); patchPtr(hier, lptrSlot, levelStart);
       const level = []; xcfU32(level, w); xcfU32(level, h);
       const across = Math.ceil(w / 64), down = Math.ceil(h / 64), tileSlots = [];
-      for (let i = 0; i < across * down; i++) { tileSlots.push(level.length); xcfU32(level, 0); }
-      xcfU32(level, 0);
+      for (let i = 0; i < across * down; i++) tileSlots.push(addPtr(level));
+      addPtr(level);
       const tileStart = levelStart + level.length;
       const tiles = [];
       for (let ty = 0; ty < down; ty++) for (let tx = 0; tx < across; tx++) {
         const tw = Math.min(64, w - tx * 64), th = Math.min(64, h - ty * 64);
-        xcfPatchU32(level, tileSlots[ty * across + tx], tileStart + tiles.length);
-        tiles.push(...xcfTile(data, w, h, tx * 64, ty * 64, tw, th));
+        patchPtr(level, tileSlots[ty * across + tx], tileStart + tiles.length);
+        tiles.push(...(depth === 16 ? xcfTile16(data, w, h, tx * 64, ty * 64, tw, th) : xcfTile8(data, w, h, tx * 64, ty * 64, tw, th)));
       }
-      xcfPatchU32(header, layerPtrSlots[layers.indexOf(l)], layerStart);
+      patchPtr(header, layerPtrSlots[layers.indexOf(l)], layerStart);
       const chunk = lb.concat(hier, level, tiles);
       chunks.push(chunk); total += chunk.length;
     }

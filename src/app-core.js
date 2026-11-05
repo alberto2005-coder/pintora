@@ -655,7 +655,8 @@ async function openXcf(file, asLayers) {
 async function saveXcf() {
   const d = S.doc; flushDirty();
   const buffer = PintoraFormats.writeXcf({
-    w: d.w, h: d.h, layers: d.layers.map((l) => ({ name: l.name, data: l.data, opacity: l.opacity, visible: l.visible, mode: l.mode, x: l.x, y: l.y, w: l.w, h: l.h, lockAlpha: l.lockAlpha }))
+    w: d.w, h: d.h, depth: d.depth,
+    layers: d.layers.map((l) => ({ name: l.name, data: l.data, data16: l.data16, opacity: l.opacity, visible: l.visible, mode: l.mode, x: l.x, y: l.y, w: l.w, h: l.h, lockAlpha: l.lockAlpha }))
   });
   await saveBlob(baseName() + '.xcf', new Blob([buffer], { type: 'image/x-xcf' }));
 }
