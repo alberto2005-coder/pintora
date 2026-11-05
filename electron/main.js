@@ -1,17 +1,6 @@
 // Electron shell: opens the same single-page editor as a desktop window.
-const { app, BrowserWindow, Menu, shell } = require('electron');
-const path = require('node:path');
-
-function createWindow() {
-  const win = new BrowserWindow({
-    width: 1440, height: 900, minWidth: 900, minHeight: 600, backgroundColor: '#14161a', title: 'Pintora',
-    icon: path.join(__dirname, '..', 'dist', 'icon.png'),
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false }
-  });
-  Menu.setApplicationMenu(null); // the editor has its own menu bar
-  win.loadFile(path.join(__dirname, '..', 'dist', 'pintora.html'));
-  win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
-}
+const { app, BrowserWindow } = require('electron');
+const { createWindow } = require('./window');
 
 app.whenReady().then(() => {
   createWindow();

@@ -755,9 +755,13 @@
 
     doMenu('Ayuda', 'Atajos de teclado');
     check($('.dialog header').textContent === 'Atajos de teclado', 'No se abrieron los atajos');
+    const helpText = $('.dialog .body').textContent;
+    check(helpText.includes('Ctrl+Mayús+D') && helpText.includes('Ctrl+S') && helpText.includes('Ctrl+E'), 'Los atajos no incluyen las acciones actuales');
     await okDialog();
     doMenu('Ayuda', 'Acerca de Pintora');
     check($('.dialog header').textContent === 'Acerca de Pintora', 'No se abrió Acerca de');
+    const aboutText = $('.dialog .body').textContent;
+    check(aboutText.includes('0.1.0') && aboutText.includes('21 herramientas') && aboutText.includes('PSD') && aboutText.includes('v3') && aboutText.includes('GPL-3.0-or-later'), 'Acerca de no refleja las capacidades actuales');
     await okDialog();
   });
 
