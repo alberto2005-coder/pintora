@@ -79,7 +79,8 @@ html.native .app { padding-inline: 0; }
 .dock-tabs { display: none; }
 .dock { border-bottom: 1px solid var(--line); padding: 8px 10px 10px; min-width: 0; }
 .dock h3 { margin: 0 0 8px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-.dock.layers { flex: 1; display: flex; flex-direction: column; min-height: 240px; }
+.dock.layers { flex: 1; display: flex; flex-direction: column; min-height: 240px; overflow: hidden; }
+.dock.layers h3, .layerctl, .layerbtns { flex: 0 0 auto; }
 .dock.history { max-height: 200px; display: flex; flex-direction: column; border-bottom: 0; }
 
 /* colour */
@@ -102,7 +103,7 @@ html.native .app { padding-inline: 0; }
 .layerctl select { flex: 1; min-width: 0; }
 .layerctl input[type=range] { flex: 1; accent-color: var(--accent); min-width: 0; }
 .layerctl .val { min-width: 38px; text-align: right; font-variant-numeric: tabular-nums; }
-.layerlist { flex: 1; overflow-y: auto; border: 1px solid var(--line); border-radius: 5px; background: var(--bg); min-height: 120px; }
+.layerlist { flex: 1 1 auto; overflow-y: auto; border: 1px solid var(--line); border-radius: 5px; background: var(--bg); min-height: 0; }
 .lrow { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-bottom: 1px solid var(--line); background: var(--panel); }
 .lrow.sel { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
 .lrow .eye { width: 24px; height: 24px; flex: none; }

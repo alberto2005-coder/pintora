@@ -510,6 +510,11 @@ function boot() {
   setDoc(buildSample(), 'Amanecer (ejemplo)'); S.modified = false;
   syncHsvFrom(S.fg); refreshColor(); refreshToolbox(); selectTool('paintbrush'); refreshStatus(); fitView();
   void checkAutosave();
-  window.__pintora = { S, E, A, TOOL_IMPL, selectTool, setDoc, docChanged, runFilter };
+  window.__pintora = {
+    S, E, A, TOOL_IMPL, selectTool, setDoc, docChanged, runFilter,
+    F: PintoraFormats, flushDirty, exportImage, projectData, loadProject, saveProject, savePsd,
+    openFiles, addImageAsLayer, pasteClip, copySelection, clearSelection, openTextDialog,
+    buildSample, refreshAll, resizeBuffers, setTheme
+  };
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();

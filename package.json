@@ -9,6 +9,8 @@
     "build": "node build.mjs",
     "icons": "electron scripts/make-icons.cjs",
     "test": "node --test test/",
+    "test:ui": "node build.mjs && electron test-ui/run.cjs",
+    "test:all": "npm test && npm run test:ui",
     "start": "node build.mjs && electron .",
     "dist:win": "node build.mjs && electron-builder --win nsis portable",
     "dist:mac": "node build.mjs && electron-builder --mac dmg",

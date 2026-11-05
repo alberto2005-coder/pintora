@@ -8,6 +8,7 @@ Funciona como página suelta en el navegador y como aplicación de escritorio co
 - Abre `dist/pintora.html` en un navegador moderno (no necesita servidor).
 - `npm run build` regenera `dist/` a partir de `src/`.
 - `npm test` ejecuta los tests del motor y de formatos (Node 20 o superior).
+- `npm run test:ui` reconstruye `dist/` y ejecuta la suite de interfaz en Electron; `npm run test:all` encadena ambas.
 - `npm start` abre la app de escritorio sin empaquetar.
 
 ## Qué incluye
@@ -32,6 +33,8 @@ Funciona como página suelta en el navegador y como aplicación de escritorio co
 
 Las capas tienen tamaño y posición propios: puedes importar una imagen como capa sin recortarla,
 moverla total o parcialmente fuera del lienzo y pintar en ella con sus coordenadas locales.
+El panel de capas se adapta a la altura disponible: en pantalla completa los botones de capa quedan
+dentro de su panel y en vistas estrechas los paneles pasan a un desplegable.
 
 XCF, 16 bits por canal y perfiles ICC todavía no están implementados.
 
@@ -48,6 +51,10 @@ XCF, 16 bits por canal y perfiles ICC todavía no están implementados.
 - `build.mjs`: une todo en un solo HTML.
 - `electron/main.js`: ventana de escritorio.
 - `test/engine.test.js`, `test/formats.test.js`: tests del motor y de los formatos.
+- `test-ui/run.cjs`, `test-ui/suite.js`: 27 pruebas de interfaz sobre el HTML construido, con ventana
+  Electron oculta, captura de errores y viewports de 1440×900, 1920×1080 y 800×700. Comprueban
+  menús, herramientas, paneles desplegables, botones de capa, capas con límites, pintura, selección
+  mágica, texto, filtros, transformaciones, temas y exportaciones reales a PNG, JPEG, WebP, TIFF y GIF.
 
 ## Iconos
 
