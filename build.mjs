@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const root = dirname(fileURLToPath(import.meta.url));
 const read = (f) => readFileSync(join(root, 'src', f), 'utf8');
 const engine = read('engine.js');
-const app = ['app-core.js', 'app-tools.js', 'app-ui.js'].map(read).join('\n');
+const app = ['formats.js', 'app-core.js', 'app-tools.js', 'app-ui.js'].map(read).join('\n');
 const css = read('app.css');
 const body = read('body.html');
 const fonts = 'https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Schibsted+Grotesk:wght@400;500;600;700&display=swap';

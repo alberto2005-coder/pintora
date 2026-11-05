@@ -7,7 +7,7 @@
   "author": "Pintora",
   "scripts": {
     "build": "node build.mjs",
-    "test": "node --test test/engine.test.js",
+    "test": "node --test test/",
     "start": "node build.mjs && electron .",
     "dist:win": "node build.mjs && electron-builder --win nsis portable",
     "dist:mac": "node build.mjs && electron-builder --mac dmg",

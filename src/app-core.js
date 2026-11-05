@@ -434,6 +434,7 @@ async function openFiles(files, asLayers) {
         if (!(await confirmDiscard())) return;
         await loadProject(await f.text(), f.name); toast('Proyecto abierto: ' + f.name); continue;
       }
+      if (/\.psd$/i.test(f.name)) { await openPsd(f, asLayers); continue; }
       const im = await decodeImage(f);
       if (asLayers && S.doc) addImageAsLayer(im, f.name);
       else { if (!(await confirmDiscard())) return; openAsDocument(im, f.name); }
@@ -444,6 +445,53 @@ function openAsDocument(im, name) {
   const doc = new E.Doc(im.w, im.h), l = E.makeLayer(im.w, im.h, 'Fondo'); l.data = new Uint8ClampedArray(im.data);
   doc.layers.push(l); doc.activeId = l.id; setDoc(doc, name.replace(/\.[a-z0-9]+$/i, '')); S.modified = false;
   toast(name + ' · ' + im.w + '×' + im.h + ' px');
+}
+function placeRgba(src, sw, sh, left, top, dw, dh) {
+  const out = new Uint8ClampedArray(dw * dh * 4);
+  for (let y = 0; y < sh; y++) {
+    const ty = y + top;
+    if (ty < 0 || ty >= dh) continue;
+    const x0 = Math.max(0, -left), x1 = Math.min(sw, dw - left);
+    if (x1 <= x0) continue;
+    out.set(src.subarray((y * sw + x0) * 4, (y * sw + x1) * 4), (ty * dw + x0 + left) * 4);
+  }
+  return out;
+}
+async function openPsd(file, asLayers) {
+  const psd = PintoraFormats.readPsd(await file.arrayBuffer());
+  if (!psd.w || !psd.h) throw new Error('El PSD no tiene un tamaño válido.');
+  if (asLayers && S.doc) {
+    const d = S.doc;
+    for (const l of psd.layers) {
+      const L = d.addLayerFromData(l.name, placeRgba(l.data, l.w, l.h, l.left, l.top, d.w, d.h), 'Abrir PSD como capa');
+      L.opacity = l.opacity; L.visible = l.visible; L.mode = l.mode;
+    }
+    docChanged();
+    return;
+  }
+  if (!(await confirmDiscard())) return;
+  const doc = new E.Doc(psd.w, psd.h);
+  for (const l of psd.layers) {
+    const L = E.makeLayer(psd.w, psd.h, l.name);
+    L.data = placeRgba(l.data, l.w, l.h, l.left, l.top, psd.w, psd.h);
+    L.opacity = l.opacity; L.visible = l.visible; L.mode = l.mode;
+    doc.layers.push(L);
+  }
+  if (!doc.layers.length && psd.composite) {
+    const L = E.makeLayer(psd.w, psd.h, 'Fondo'); L.data = psd.composite.data; doc.layers.push(L);
+  }
+  if (!doc.layers.length) throw new Error('El PSD no tiene capas de mapa de bits.');
+  doc.activeId = doc.layers[doc.layers.length - 1].id;
+  setDoc(doc, file.name.replace(/\.psd$/i, '')); S.modified = false;
+  toast('PSD: ' + doc.layers.length + ' capas · ' + psd.w + '×' + psd.h + ' px');
+}
+async function savePsd() {
+  const d = S.doc; flushDirty();
+  const buffer = PintoraFormats.writePsd({
+    w: d.w, h: d.h, composite: E.flattenOn(d.layers, d.w, d.h),
+    layers: d.layers.map((l) => ({ name: l.name, data: l.data, opacity: l.opacity, visible: l.visible, mode: l.mode }))
+  });
+  await saveBlob(baseName() + '.psd', new Blob([buffer], { type: 'image/vnd.adobe.photoshop' }));
 }
 function addImageAsLayer(im, name) {
   const d = S.doc, data = new Uint8ClampedArray(d.w * d.h * 4), ox = Math.round((d.w - im.w) / 2), oy = Math.round((d.h - im.h) / 2);
