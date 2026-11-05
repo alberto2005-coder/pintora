@@ -339,6 +339,20 @@ test('document layers: add, duplicate, move, remove, merge, flatten', () => {
   assert.equal(doc.removeLayer(doc.layers[0].id), false, 'cannot delete the last layer');
   const d2 = new E.Doc(2, 2); d2.addLayer('a', { r: 1, g: 1, b: 1 }); d2.addLayer('b', { r: 9, g: 9, b: 9 }); assert.equal(d2.flatten(), true); assert.equal(d2.layers.length, 1);
 });
+test('duplicating a layer clones its pixels and mask', () => {
+  const doc = new E.Doc(2, 1);
+  const a = doc.addLayer('A', { r: 10, g: 20, b: 30 });
+  a.mask = new Uint8Array([0, 255]);
+  const b = doc.duplicateLayer(a.id);
+  assert.notEqual(b.data, a.data);
+  assert.notEqual(b.mask, a.mask);
+  b.data[0] = 200; b.mask[0] = 255;
+  assert.equal(a.data[0], 10);
+  assert.equal(a.mask[0], 0);
+  doc.undo();
+  assert.equal(doc.layers.length, 1);
+});
+
 test('undo / redo restore pixels, layers and selection', () => {
   const doc = new E.Doc(4, 4); const l = doc.addLayer('Fondo', { r: 10, g: 10, b: 10 });
   doc.beginOp('Pintar', l, 'data'); l.data[0] = 200;

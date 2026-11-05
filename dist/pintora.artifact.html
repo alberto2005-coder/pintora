@@ -1399,7 +1399,11 @@ html.native .app { padding-inline: 0; }
     duplicateLayer(id) {
       const src = this.layers.find((l) => l.id === id); if (!src) return null;
       this.checkpoint('Duplicar capa');
-      const l = Object.assign({}, src, { id: 'L' + layerSeq++, name: src.name + ' copia' });
+      const l = Object.assign({}, src, {
+        id: 'L' + layerSeq++, name: src.name + ' copia',
+        data: new Uint8ClampedArray(src.data),
+        mask: src.mask ? new Uint8Array(src.mask) : null
+      });
       this.layers.splice(this.indexOf(id) + 1, 0, l); this.activeId = l.id; return l;
     }
     removeLayer(id) {
