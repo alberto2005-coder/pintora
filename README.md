@@ -46,6 +46,13 @@ XCF, 16 bits por canal, perfiles ICC y capas con tamaño propio todavía no est�
 - `electron/main.js`: ventana de escritorio.
 - `test/engine.test.js`, `test/formats.test.js`: tests del motor y de los formatos.
 
+## Iconos
+
+El logotipo está en `build/icon.svg`. `npm run icons` lo rasteriza y regenera `build/icon.png`
+(512 px), `build/icon-32.png`, `build/icon-180.png` y `build/icon.ico` (16–256 px). Electron usa
+`dist/icon.png` y electron-builder toma `build/icon.ico` para el ejecutable de Windows. El HTML
+incrusta el favicon SVG y los PNG de 32 y 180 px, así que la página sigue siendo un solo archivo.
+
 ## Empaquetado
 
 ```

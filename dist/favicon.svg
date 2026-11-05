@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Pintora">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f7ca74"/>
+      <stop offset="1" stop-color="#d9921b"/>
+    </linearGradient>
+    <radialGradient id="gloss" cx=".3" cy=".18" r=".85">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".32"/>
+      <stop offset=".55" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ink" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#241b0a"/>
+      <stop offset="1" stop-color="#151006"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="116" fill="url(#bg)"/>
+  <rect width="512" height="512" rx="116" fill="url(#gloss)"/>
+  <rect x="6" y="6" width="500" height="500" rx="110" fill="none" stroke="#7a4a04" stroke-opacity=".2" stroke-width="12"/>
+  <path d="M104 400c58-2 100-18 132-50" fill="none" stroke="#df6248" stroke-width="30" stroke-linecap="round"/>
+  <path d="M176 408V128h94a82 82 0 0 1 0 164H176" fill="none" stroke="url(#ink)" stroke-width="52" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="376" cy="374" r="34" fill="url(#ink)"/>
+</svg>

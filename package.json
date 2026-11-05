@@ -7,6 +7,7 @@
   "author": "Pintora",
   "scripts": {
     "build": "node build.mjs",
+    "icons": "electron scripts/make-icons.cjs",
     "test": "node --test test/",
     "start": "node build.mjs && electron .",
     "dist:win": "node build.mjs && electron-builder --win nsis portable",
@@ -24,16 +25,24 @@
     "files": [
       "electron/**/*",
       "dist/pintora.html",
+      "dist/icon.png",
       "package.json"
     ],
     "directories": {
       "output": "release"
     },
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         "nsis",
         "portable"
       ]
+    },
+    "linux": {
+      "icon": "build/icon.png"
+    },
+    "mac": {
+      "icon": "build/icon.png"
     },
     "nsis": {
       "oneClick": false,

@@ -5,6 +5,7 @@ const path = require('node:path');
 function createWindow() {
   const win = new BrowserWindow({
     width: 1440, height: 900, minWidth: 900, minHeight: 600, backgroundColor: '#14161a', title: 'Pintora',
+    icon: path.join(__dirname, '..', 'dist', 'icon.png'),
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false }
   });
   Menu.setApplicationMenu(null); // the editor has its own menu bar
