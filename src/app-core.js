@@ -135,7 +135,7 @@ function frame() { rafId = 0; flushDirty(); draw(); }
 function docChanged(rect) {
   S.modified = true;
   if (S.flatImg.width !== S.doc.w || S.flatImg.height !== S.doc.h) resizeBuffers(); else invalidate(rect || null);
-  refreshAll();
+  refreshAll(); queueAutosave();
 }
 function refreshAll() { refreshLayers(); refreshHistory(); refreshStatus(); refreshUndoButtons(); }
 
@@ -306,19 +306,35 @@ async function exportImage(fmt, quality, bg) {
   await saveBlob(baseName() + '.' + (fmt === 'jpeg' ? 'jpg' : fmt), blob);
 }
 
-/* project file: JSON with PNG layers */
-async function saveProject() {
+/* project file: JSON with PNG layers (v2 adds selection, name and colours) */
+function maskToDataURL(mask, w, h) {
+  const data = new Uint8ClampedArray(w * h * 4);
+  for (let i = 0; i < mask.length; i++) { data[i * 4] = data[i * 4 + 1] = data[i * 4 + 2] = 255; data[i * 4 + 3] = mask[i]; }
+  return dataToCanvas(data, w, h).toDataURL('image/png');
+}
+function projectData() {
   const d = S.doc, layers = [];
   for (const l of d.layers) {
     const o = { name: l.name, visible: l.visible, opacity: l.opacity, mode: l.mode, lockAlpha: l.lockAlpha, maskOn: l.maskOn, text: l.text };
     o.png = dataToCanvas(l.data, d.w, d.h).toDataURL('image/png');
-    if (l.mask) { const m = new Uint8ClampedArray(d.w * d.h * 4); for (let i = 0; i < l.mask.length; i++) { m[i * 4] = m[i * 4 + 1] = m[i * 4 + 2] = l.mask[i]; m[i * 4 + 3] = 255; } o.mask = dataToCanvas(m, d.w, d.h).toDataURL('image/png'); }
+    if (l.mask) {
+      const m = new Uint8ClampedArray(d.w * d.h * 4);
+      for (let i = 0; i < l.mask.length; i++) { m[i * 4] = m[i * 4 + 1] = m[i * 4 + 2] = l.mask[i]; m[i * 4 + 3] = 255; }
+      o.mask = dataToCanvas(m, d.w, d.h).toDataURL('image/png');
+    }
     layers.push(o);
   }
-  const act = d.indexOf(d.activeId);
-  const json = JSON.stringify({ format: 'pintora', version: 1, w: d.w, h: d.h, active: act, layers });
-  await saveBlob(baseName() + '.pintora.json', new Blob([json], { type: 'application/json' }));
+  return {
+    format: 'pintora', version: 2, w: d.w, h: d.h, active: d.indexOf(d.activeId), name: S.name,
+    fg: { r: S.fg.r, g: S.fg.g, b: S.fg.b }, bg: { r: S.bg.r, g: S.bg.g, b: S.bg.b },
+    selection: d.selection ? maskToDataURL(d.selection, d.w, d.h) : null, layers
+  };
+}
+async function saveProject() {
+  await saveBlob(baseName() + '.pintora.json', new Blob([JSON.stringify(projectData())], { type: 'application/json' }));
   S.modified = false;
+  void idbDel(AUTOSAVE_KEY);
+  refreshStatus();
 }
 async function imageFromURL(url) {
   return new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('Proyecto dañado')); im.src = url; });
@@ -338,8 +354,77 @@ async function loadProject(text, name) {
   }
   if (!doc.layers.length) throw new Error('El proyecto no tiene capas');
   doc.activeId = doc.layers[clamp(p.active | 0, 0, doc.layers.length - 1)].id;
-  setDoc(doc, (name || 'Proyecto').replace(/\.pintora\.json$|\.json$/i, '')); S.modified = false;
+  if (p.selection) {
+    const si = await imageFromURL(p.selection), sc = document.createElement('canvas'); sc.width = p.w; sc.height = p.h;
+    const sg = sc.getContext('2d', { willReadFrequently: true }); sg.drawImage(si, 0, 0);
+    const sd = sg.getImageData(0, 0, p.w, p.h).data, sm = new Uint8Array(p.w * p.h);
+    for (let i = 0; i < sm.length; i++) sm[i] = sd[i * 4 + 3];
+    doc.selection = E.normalizeMask(sm);
+  }
+  setDoc(doc, p.name || (name || 'Proyecto').replace(/\.pintora\.json$|\.json$/i, ''));
+  if (p.fg) S.fg = { r: p.fg.r, g: p.fg.g, b: p.fg.b };
+  if (p.bg) S.bg = { r: p.bg.r, g: p.bg.g, b: p.bg.b };
+  syncHsvFrom(S.fg); refreshColor(); refreshAll(); schedule();
+  S.modified = false;
 }
+
+/* ---------------- autosave (IndexedDB) ---------------- */
+const AUTOSAVE_DB = 'pintora', AUTOSAVE_STORE = 'sesiones', AUTOSAVE_KEY = 'autoguardado';
+function idbOpen() {
+  return new Promise((res, rej) => {
+    if (typeof indexedDB === 'undefined') { rej(new Error('IndexedDB no disponible')); return; }
+    const req = indexedDB.open(AUTOSAVE_DB, 1);
+    req.onupgradeneeded = () => { const db = req.result; if (!db.objectStoreNames.contains(AUTOSAVE_STORE)) db.createObjectStore(AUTOSAVE_STORE); };
+    req.onsuccess = () => res(req.result);
+    req.onerror = () => rej(req.error);
+  });
+}
+function idbDo(mode, fn) {
+  return idbOpen().then((db) => new Promise((res, rej) => {
+    const tx = db.transaction(AUTOSAVE_STORE, mode), req = fn(tx.objectStore(AUTOSAVE_STORE));
+    tx.oncomplete = () => { db.close(); res(req.result); };
+    tx.onerror = () => { db.close(); rej(tx.error); };
+    tx.onabort = () => { db.close(); rej(tx.error); };
+  }));
+}
+const idbPut = (key, value) => idbDo('readwrite', (s) => s.put(value, key));
+const idbGet = (key) => idbDo('readonly', (s) => s.get(key));
+const idbDel = (key) => idbDo('readwrite', (s) => s.delete(key));
+let autosaveTimer = 0, autosaveBusy = false, autosaveAgain = false;
+function queueAutosave() {
+  if (!S.doc || !S.modified) return;
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(() => { void runAutosave(); }, 2500);
+}
+async function runAutosave() {
+  if (!S.doc || !S.modified) return;
+  if (autosaveBusy) { autosaveAgain = true; return; }
+  autosaveBusy = true;
+  try { await idbPut(AUTOSAVE_KEY, { at: Date.now(), name: S.name, json: JSON.stringify(projectData()) }); }
+  catch (e) { /* almacenamiento no disponible */ }
+  autosaveBusy = false;
+  if (autosaveAgain) { autosaveAgain = false; queueAutosave(); }
+}
+async function checkAutosave() {
+  let rec = null;
+  try { rec = await idbGet(AUTOSAVE_KEY); } catch (e) { return; }
+  if (!rec || !rec.json) return;
+  let when = '';
+  try { when = new Date(rec.at).toLocaleString(); } catch (e) { /* fecha inválida */ }
+  dialog({
+    title: 'Recuperar la sesión anterior', dismiss: false,
+    fields: [{ type: 'info', text: 'Hay cambios sin guardar' + (when ? ' de ' + when : '') + ' (' + (rec.name || 'Sin título') + ').' }],
+    ok: 'Restaurar', cancel: 'Descartar',
+    onOk: async () => {
+      try {
+        await loadProject(rec.json, rec.name || 'Recuperado');
+        S.modified = true; refreshStatus(); void idbDel(AUTOSAVE_KEY); toast('Sesión restaurada');
+      } catch (e) { toast('No se pudo restaurar: ' + (e.message || e)); }
+    },
+    onCancel: () => { void idbDel(AUTOSAVE_KEY); }
+  });
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden) void runAutosave(); });
 
 async function openFiles(files, asLayers) {
   files = Array.from(files); if (!files.length) return;

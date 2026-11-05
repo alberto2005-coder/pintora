@@ -183,7 +183,7 @@ function refreshStatus() {
 }
 function afterHistory() {
   const d = S.doc; if (S.flatImg.width !== d.w || S.flatImg.height !== d.h) resizeBuffers(); else invalidate(null);
-  S.antsSel = undefined; S.modified = true; refreshAll(); refreshOptions(); schedule();
+  S.antsSel = undefined; S.modified = true; refreshAll(); refreshOptions(); queueAutosave(); schedule();
 }
 function doUndo() { cancelActive(); if (S.doc.undo()) afterHistory(); }
 function doRedo() { cancelActive(); if (S.doc.redo()) afterHistory(); }
@@ -394,6 +394,7 @@ function boot() {
   new ResizeObserver(() => { sizeCanvas(); schedule(); }).observe(stage);
   setDoc(buildSample(), 'Amanecer (ejemplo)'); S.modified = false;
   syncHsvFrom(S.fg); refreshColor(); refreshToolbox(); selectTool('paintbrush'); refreshStatus(); fitView();
+  void checkAutosave();
   window.__pintora = { S, E, A, TOOL_IMPL, selectTool, setDoc, docChanged, runFilter };
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
