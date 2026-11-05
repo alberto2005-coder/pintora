@@ -7,38 +7,44 @@ Funciona como página suelta en el navegador y como aplicación de escritorio co
 
 - Abre `dist/pintora.html` en un navegador moderno (no necesita servidor).
 - `npm run build` regenera `dist/` a partir de `src/`.
-- `npm test` ejecuta los tests del motor (Node 20 o superior).
+- `npm test` ejecuta los tests del motor y de formatos (Node 20 o superior).
 - `npm start` abre la app de escritorio sin empaquetar.
 
 ## Qué incluye
 
 - Capas con opacidad, visibilidad, bloqueo de transparencia, máscaras y 35 modos de mezcla.
 - Selecciones rectangular, elíptica, libre, por color y varita mágica, con modos de combinación.
-- 19 herramientas de pintura, selección, transformación y vista.
-- 19 filtros de color, desenfoque, mejora, distorsión y luz.
-- Texto rasterizado, historial con deshacer/rehacer, guías de selección animadas.
-- Proyecto propio `.pintora.json` que conserva capas y máscaras.
+- 21 herramientas: pintura, retoque (clonar, sobreexponer, manchar, desenfocar/enfocar),
+  selección, recorte, degradado, texto, zoom y mano.
+- 20 filtros, incluido un editor de curvas por canales (RGB, R, G, B).
+- Histograma por canales con luminancia media.
+- Texto rasterizado, historial con deshacer/rehacer y guías de selección animadas.
+- Autoguardado en el navegador y recuperación de la sesión anterior al arrancar.
 
 ## Formatos
 
-- **Abrir:** cualquier formato que decodifique el navegador (PNG, JPEG, WebP, GIF, BMP, SVG
-  rasterizado) y proyectos `.pintora.json`. El GIF se abre en su primer fotograma.
-- **Exportar:** PNG (con transparencia), JPEG y WebP.
-- **Proyecto:** `.pintora.json`, con cada capa y máscara como PNG incrustado.
+- **Abrir:** PNG, JPEG, WebP, GIF (primer fotograma), BMP y SVG rasterizado según el navegador;
+  TIFF; PSD con sus capas; y proyectos `.pintora.json`.
+- **Exportar:** PNG (con transparencia), JPEG, WebP, TIFF y GIF animado (una capa visible por fotograma).
+- **PSD:** importa capas, opacidad, visibilidad y los modos de mezcla equivalentes; exporta el
+  documento con sus capas. Las capas se guardan al tamaño del lienzo (sin recortar su rectángulo original).
+- **Proyecto:** `.pintora.json`, versión 2, con capas, máscaras, selección y colores.
 
 XCF, 16 bits por canal, perfiles ICC y capas con tamaño propio todavía no están implementados.
 
 ## Estructura
 
-- `src/engine.js`: motor sin DOM (mezcla, selecciones, pincel, filtros, documento e historial).
-- `src/app-core.js`: estado, vista, render, importar/exportar, portapapeles, texto, imagen de ejemplo.
+- `src/engine.js`: motor sin DOM (mezcla, selecciones, pincel, filtros, curvas, histograma,
+  documento e historial).
+- `src/formats.js`: conversión sin DOM entre el modelo y PSD, TIFF y GIF.
+- `src/app-core.js`: estado, vista, render, importar/exportar, portapapeles, autoguardado, texto.
 - `src/app-tools.js`: herramientas y entrada de puntero.
 - `src/app-ui.js`: diálogos, paneles, menús, atajos y arranque.
 - `src/app.css`, `src/body.html`: estilos y estructura.
 - `src/vendor.js`: librerías externas que se empaquetan en el HTML.
 - `build.mjs`: une todo en un solo HTML.
 - `electron/main.js`: ventana de escritorio.
-- `test/engine.test.js`: tests del motor.
+- `test/engine.test.js`, `test/formats.test.js`: tests del motor y de los formatos.
 
 ## Empaquetado
 
