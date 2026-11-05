@@ -871,6 +871,20 @@ html.native .app { padding-inline: 0; }
       }
     }
   }
+  /** Blur / sharpen brush: blend `orig` towards (or away from) a pre-blurred copy through coverage. */
+  function applyConvolve(dest, orig, blurred, w, box, cov, sel, amount, sharpen) {
+    for (let y = box.y0; y <= box.y1; y++) for (let x = box.x0; x <= box.x1; x++) {
+      const p = y * w + x, c = cov[p]; if (c <= 0) continue;
+      const i = p * 4; if (orig[i + 3] === 0) continue;
+      let a = c * amount; if (sel) a *= sel[p] / 255;
+      if (a <= 0) continue;
+      for (let k = 0; k < 3; k++) {
+        const delta = sharpen ? orig[i + k] - blurred[i + k] : blurred[i + k] - orig[i + k];
+        dest[i + k] = orig[i + k] + delta * a;
+      }
+      dest[i + 3] = orig[i + 3];
+    }
+  }
   /** Emits dabs along a polyline with constant spacing. */
   class Stroker {
     constructor(spacing, emit) { this.spacing = Math.max(spacing, 0.5); this.emit = emit; this.last = null; this.rem = 0; }
@@ -1563,7 +1577,7 @@ html.native .app { padding-inline: 0; }
     MODES, MODE_LIST, SEP, NONSEP, composite, flattenOn,
     maskIsEmpty, normalizeMask, rectMask, ellipseMask, polygonMask, combineMasks, invertMask, maskBounds,
     growMask, shrinkMask, featherMask, floodMask, selectionEdges, distanceTransform,
-    stampDab, applyCoverage, applyCoverageMask, applyClone, applyDodgeBurn, Stroker, fillMask, fillGradient,
+    stampDab, applyCoverage, applyCoverageMask, applyClone, applyDodgeBurn, applyConvolve, Stroker, fillMask, fillGradient,
     toPlanes, fromPlanes, blurPlanes, resize, resizeMask,
     cropData, flipData, rotate90Data, transformData, offsetData,
     FILTERS, applyFilter, curveLUT, histogram, makeLayer, Doc
@@ -1739,6 +1753,8 @@ const ICONS = {
   airbrush: '<path d="M4 14l5-5 5 5-5 5z"/><path d="M14 8l5-5M16 12h4M12 6V2"/><circle cx="19" cy="16" r=".6"/><circle cx="21" cy="19" r=".6"/><circle cx="17" cy="20" r=".6"/>',
   clone: '<rect x="9" y="3" width="6" height="8" rx="3"/><path d="M12 11v3M5 21v-3a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v3z"/>',
   dodge: '<circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor" stroke="none"/>',
+  blur: '<circle cx="12" cy="12" r="8" stroke-dasharray="2 3"/><path d="M12 4v3M12 17v3M4 12h3M17 12h3" stroke-opacity=".55"/>',
+  smudge: '<path d="M5 17c4 0 4-7 8-7s2 8 6 8"/><path d="M5 12c4 0 4-5 8-5s3 6 6 6" stroke-opacity=".5"/>',
   bucket: '<path d="M5 11l7-7 7 7-6 6a2 2 0 0 1-2.8 0L5 13.8a2 2 0 0 1 0-2.8z"/><path d="M5 11h14M20 16c1 1.5 1.5 2.5 1.5 3.2a1.5 1.5 0 0 1-3 0c0-.7.5-1.7 1.5-3.2z"/>',
   gradient: '<rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 5v14M12 5v14M16 5v14" stroke-opacity=".5"/>',
   picker: '<path d="M14.5 4.5l5 5M17 7l-9 9-1 3 3-1 9-9"/><path d="M15 3.5a2 2 0 0 1 3 0l2.5 2.5a2 2 0 0 1 0 3"/>',
@@ -1786,7 +1802,8 @@ const S = {
   opts: {
     size: 24, hardness: 0.6, opacity: 1, spacing: 0.12, flow: 0.25, exposure: 0.35,
     selmode: 'replace', threshold: 20, sampleMerged: false, fillMode: 'similar', gradShape: 'linear', gradColors: 'fgbg',
-    moveTarget: 'layer', dbMode: 'dodge', dbRange: 'midtones', aa: true, pickSample: 'merged', dyn: true
+    moveTarget: 'layer', dbMode: 'dodge', dbRange: 'midtones', aa: true, pickSample: 'merged', dyn: true,
+    strength: 0.5, blurMode: 'blur', blurRadius: 4
   }
 };
 const MAX_DIM = 8192;
@@ -2365,6 +2382,8 @@ const TOOLS = [
   { id: 'airbrush', name: 'Aerógrafo', key: 'A', icon: 'airbrush', opts: ['size', 'hardness', 'flow', 'opacity'], hint: 'La pintura se acumula mientras mantienes pulsado.' },
   { id: 'clone', name: 'Clonar', key: 'C', icon: 'clone', opts: ['size', 'hardness', 'opacity'], hint: 'Ctrl+clic fija el origen y luego pinta.' },
   { id: 'dodgeburn', name: 'Sobreexponer / subexponer', key: 'Shift+D', icon: 'dodge', opts: ['size', 'hardness', 'exposure', 'dbMode', 'dbRange'], hint: 'Aclara u oscurece. Ctrl invierte el modo.' },
+  { id: 'blur', name: 'Desenfocar / enfocar', key: 'Shift+U', icon: 'blur', opts: ['size', 'hardness', 'opacity', 'strength', 'blurMode', 'blurRadius'], hint: 'Pinta para desenfocar o enfocar la capa.' },
+  { id: 'smudge', name: 'Manchar', key: 'S', icon: 'smudge', opts: ['size', 'hardness', 'opacity', 'strength', 'flow'], hint: 'Arrastra para arrastrar el color de la zona.' },
   { id: 'bucket', name: 'Cubo de pintura', key: 'Shift+B', icon: 'bucket', opts: ['fillMode', 'threshold', 'sampleMerged', 'opacity'], hint: 'Ctrl+clic rellena con el color de fondo.' },
   { id: 'gradient', name: 'Degradado', key: 'G', icon: 'gradient', opts: ['gradShape', 'gradColors', 'opacity'], hint: 'Arrastra de inicio a fin.' },
   { id: 'picker', name: 'Cuentagotas', key: 'O', icon: 'picker', opts: ['pickSample'], hint: 'Clic = color de frente, Alt+clic = color de fondo.' },
@@ -2381,6 +2400,9 @@ const OPTDEFS = {
   spacing: { label: 'Espaciado', type: 'range', min: 0.02, max: 1, step: 0.01, fmt: (v) => Math.round(v * 100) + '%' },
   flow: { label: 'Flujo', type: 'range', min: 0.02, max: 1, step: 0.01, fmt: (v) => Math.round(v * 100) + '%' },
   exposure: { label: 'Exposición', type: 'range', min: 0.02, max: 1, step: 0.01, fmt: (v) => Math.round(v * 100) + '%' },
+  strength: { label: 'Intensidad', type: 'range', min: 0.05, max: 1, step: 0.01, fmt: (v) => Math.round(v * 100) + '%' },
+  blurMode: { type: 'seg', options: [['blur', 'Desenfocar'], ['sharpen', 'Enfocar']] },
+  blurRadius: { label: 'Radio', type: 'range', min: 1, max: 40, step: 0.5, fmt: (v) => v + ' px' },
   selmode: { type: 'seg', options: [['replace', 'Nueva'], ['add', 'Añadir'], ['subtract', 'Restar'], ['intersect', 'Intersecar']] },
   aa: { label: 'Suavizar bordes', type: 'check' },
   threshold: { label: 'Umbral', type: 'range', min: 0, max: 255, step: 1, fmt: (v) => String(v) },
@@ -2601,7 +2623,7 @@ function makeCrop() {
 /* ---------- painting (pencil, brush, eraser, airbrush, clone, dodge/burn) ---------- */
 function makePaint(kind) {
   let st = null;
-  const label = { pencil: 'Lápiz', paintbrush: 'Pincel', eraser: 'Borrador', airbrush: 'Aerógrafo', clone: 'Clonar', dodgeburn: 'Sobreexponer/subexponer' }[kind];
+  const label = { pencil: 'Lápiz', paintbrush: 'Pincel', eraser: 'Borrador', airbrush: 'Aerógrafo', clone: 'Clonar', dodgeburn: 'Sobreexponer/subexponer', blur: 'Desenfocar/enfocar', smudge: 'Manchar' }[kind];
   function applyBox(box) {
     const d = S.doc, o = S.opts, L = st.L, w = d.w, sel = d.selection;
     if (st.target === 'mask') {
@@ -2611,6 +2633,11 @@ function makePaint(kind) {
     } else if (kind === 'dodgeburn') {
       for (let y = box.y0; y <= box.y1; y++) L.data.set(st.orig.data.subarray((y * w + box.x0) * 4, (y * w + box.x1 + 1) * 4), (y * w + box.x0) * 4);
       E.applyDodgeBurn(L.data, w, box, st.cov, sel, (o.dbMode === 'burn') !== st.ctrl, o.exposure, o.dbRange);
+    } else if (kind === 'blur') {
+      for (let y = box.y0; y <= box.y1; y++) L.data.set(st.orig.data.subarray((y * w + box.x0) * 4, (y * w + box.x1 + 1) * 4), (y * w + box.x0) * 4);
+      E.applyConvolve(L.data, st.orig.data, st.blurred, w, box, st.cov, sel, o.strength * o.opacity, o.blurMode === 'sharpen');
+    } else if (kind === 'smudge') {
+      E.applyClone(L.data, L.data, L.data, w, d.h, st.cov, box, sel, st.smOff[0], st.smOff[1], o.opacity * o.strength, L.lockAlpha);
     } else {
       E.applyCoverage(L.data, st.orig.data, w, st.cov, box, sel, S.fg, o.opacity, { erase: kind === 'eraser', lockAlpha: L.lockAlpha && kind !== 'eraser' });
     }
@@ -2619,6 +2646,8 @@ function makePaint(kind) {
   function stamp(x, y) {
     const d = S.doc, o = S.opts, pen = st.pen && o.dyn;
     let size = o.size * (pen ? clamp(st.pressure * 1.6, 0.12, 1) : 1); if (kind === 'pencil') size = Math.max(1, Math.round(size));
+    const prev = st.prev || [x, y]; st.prev = [x, y];
+    if (kind === 'smudge') st.smOff = [prev[0] - x, prev[1] - y];
     const box = E.stampDab(st.cov, d.w, d.h, x, y, size, kind === 'pencil' ? 1 : o.hardness, kind !== 'pencil', kind === 'airbrush' ? o.flow : 1, kind === 'airbrush');
     st.box = unionBox(st.box, box); applyBox(box);
   }
@@ -2635,8 +2664,10 @@ function makePaint(kind) {
       if (kind === 'clone' && !S.cloneSrc) { toast('Ctrl+clic para elegir el origen del clonado.'); return; }
       const target = d.editMask ? 'mask' : 'data';
       if (target === 'mask' && !L.mask) { toast('Esta capa no tiene máscara.'); return; }
+      if (target === 'mask' && (kind === 'blur' || kind === 'smudge')) { toast('Estas herramientas solo pintan en la capa, no en la máscara.'); return; }
       const orig = d.beginOp(label, L, target);
-      st = { L, target, orig, cov: ensureCov(), box: null, last: [ev.x, ev.y], pressure: ev.pressure, pen: ev.pointerType === 'pen', ctrl: ev.ctrl, timer: 0, off: kind === 'clone' ? { dx: S.cloneSrc.x - ev.x, dy: S.cloneSrc.y - ev.y } : null };
+      st = { L, target, orig, cov: ensureCov(), box: null, last: [ev.x, ev.y], prev: [ev.x, ev.y], pressure: ev.pressure, pen: ev.pointerType === 'pen', ctrl: ev.ctrl, timer: 0, smOff: [0, 0], off: kind === 'clone' ? { dx: S.cloneSrc.x - ev.x, dy: S.cloneSrc.y - ev.y } : null };
+      if (kind === 'blur') st.blurred = E.applyFilter('gaussian_blur', st.orig.data, d.w, d.h, { radius: S.opts.blurRadius });
       const spacing = kind === 'pencil' ? 1 : Math.max(1, S.opts.size * S.opts.spacing);
       st.stroker = new E.Stroker(spacing, stamp); st.stroker.begin(ev.x, ev.y);
       if (kind === 'airbrush') st.timer = setInterval(() => { if (st) stamp(st.last[0], st.last[1]); }, 60);
@@ -2755,7 +2786,7 @@ function makeZoom() {
 const TOOL_IMPL = {
   rect: makeBoxSelect('rect'), ellipse: makeBoxSelect('ellipse'), free: makeFreeSelect(), fuzzy: makeColorSelect(true), bycolor: makeColorSelect(false),
   move: makeMove(), crop: makeCrop(), pencil: makePaint('pencil'), paintbrush: makePaint('paintbrush'), eraser: makePaint('eraser'), airbrush: makePaint('airbrush'),
-  clone: makePaint('clone'), dodgeburn: makePaint('dodgeburn'), bucket: makeBucket(), gradient: makeGradient(), picker: makePicker(), text: makeText(), zoom: makeZoom(), hand: { cursor: 'grab' }
+  clone: makePaint('clone'), dodgeburn: makePaint('dodgeburn'), blur: makePaint('blur'), smudge: makePaint('smudge'), bucket: makeBucket(), gradient: makeGradient(), picker: makePicker(), text: makeText(), zoom: makeZoom(), hand: { cursor: 'grab' }
 };
 
 function selectTool(id) {
@@ -3186,7 +3217,8 @@ function openTextDialog(pos, existing) {
     onInput: (v) => render(v), onOk: () => docChanged(), onCancel: () => { d.undo(); d.redoStack.pop(); afterHistory(); } });
 }
 function helpDialog() {
-  const rows = [['R · E · F · U', 'Selección rectangular, elíptica, libre, varita mágica'], ['Mayús+O', 'Selección por color'], ['M · Mayús+C', 'Mover · recortar'], ['N · P · Mayús+E · A', 'Lápiz · pincel · borrador · aerógrafo'], ['C · Mayús+D', 'Clonar · sobreexponer/subexponer'], ['Mayús+B · G · O · T', 'Cubo · degradado · cuentagotas · texto'], ['Z · H · Espacio', 'Zoom · mano · desplazar temporalmente'], ['[ · ]', 'Reducir / aumentar el pincel'], ['X · D', 'Intercambiar colores · negro y blanco'], ['Ctrl+Z · Ctrl+Y', 'Deshacer · rehacer'], ['Ctrl+A · Ctrl+Mayús+A · Ctrl+I', 'Seleccionar todo · nada · invertir'], ['Ctrl+C · Ctrl+X · Ctrl+V', 'Copiar · cortar · pegar como capa (Mayús fuerza el portapapeles del sistema)'], ['Supr', 'Borrar la selección'], ['Ctrl+Mayús+N', 'Capa nueva'], ['Ctrl+F', 'Repetir el último filtro'], ['Ctrl+rueda · rueda', 'Zoom · desplazar'], ['1 · 2 · 0', 'Zoom 100 % · 200 % · ajustar'], ['Ctrl+S · Ctrl+E', 'Guardar proyecto · exportar']];
+  const rows = [['R · E · F · U', 'Selección rectangular, elíptica, libre, varita mágica'], ['Mayús+O', 'Selección por color'], ['M · Mayús+C', 'Mover · recortar'], ['N · P · Mayús+E · A', 'Lápiz · pincel · borrador · aerógrafo'], ['C · Mayús+D', 'Clonar · sobreexponer/subexponer'],
+    ['S · Mayús+U', 'Manchar · desenfocar/enfocar'], ['Mayús+B · G · O · T', 'Cubo · degradado · cuentagotas · texto'], ['Z · H · Espacio', 'Zoom · mano · desplazar temporalmente'], ['[ · ]', 'Reducir / aumentar el pincel'], ['X · D', 'Intercambiar colores · negro y blanco'], ['Ctrl+Z · Ctrl+Y', 'Deshacer · rehacer'], ['Ctrl+A · Ctrl+Mayús+A · Ctrl+I', 'Seleccionar todo · nada · invertir'], ['Ctrl+C · Ctrl+X · Ctrl+V', 'Copiar · cortar · pegar como capa (Mayús fuerza el portapapeles del sistema)'], ['Supr', 'Borrar la selección'], ['Ctrl+Mayús+N', 'Capa nueva'], ['Ctrl+F', 'Repetir el último filtro'], ['Ctrl+rueda · rueda', 'Zoom · desplazar'], ['1 · 2 · 0', 'Zoom 100 % · 200 % · ajustar'], ['Ctrl+S · Ctrl+E', 'Guardar proyecto · exportar']];
   dialog({ title: 'Atajos de teclado', wide: true, noCancel: true, ok: 'Cerrar', fields: [], node: h('table', { class: 'kbdtable' }, rows.map(([k, t]) => h('tr', null, h('td', { text: k }), h('td', { text: t })))) });
 }
 function aboutDialog() {

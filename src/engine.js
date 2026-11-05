@@ -591,6 +591,20 @@
       }
     }
   }
+  /** Blur / sharpen brush: blend `orig` towards (or away from) a pre-blurred copy through coverage. */
+  function applyConvolve(dest, orig, blurred, w, box, cov, sel, amount, sharpen) {
+    for (let y = box.y0; y <= box.y1; y++) for (let x = box.x0; x <= box.x1; x++) {
+      const p = y * w + x, c = cov[p]; if (c <= 0) continue;
+      const i = p * 4; if (orig[i + 3] === 0) continue;
+      let a = c * amount; if (sel) a *= sel[p] / 255;
+      if (a <= 0) continue;
+      for (let k = 0; k < 3; k++) {
+        const delta = sharpen ? orig[i + k] - blurred[i + k] : blurred[i + k] - orig[i + k];
+        dest[i + k] = orig[i + k] + delta * a;
+      }
+      dest[i + 3] = orig[i + 3];
+    }
+  }
   /** Emits dabs along a polyline with constant spacing. */
   class Stroker {
     constructor(spacing, emit) { this.spacing = Math.max(spacing, 0.5); this.emit = emit; this.last = null; this.rem = 0; }
@@ -1283,7 +1297,7 @@
     MODES, MODE_LIST, SEP, NONSEP, composite, flattenOn,
     maskIsEmpty, normalizeMask, rectMask, ellipseMask, polygonMask, combineMasks, invertMask, maskBounds,
     growMask, shrinkMask, featherMask, floodMask, selectionEdges, distanceTransform,
-    stampDab, applyCoverage, applyCoverageMask, applyClone, applyDodgeBurn, Stroker, fillMask, fillGradient,
+    stampDab, applyCoverage, applyCoverageMask, applyClone, applyDodgeBurn, applyConvolve, Stroker, fillMask, fillGradient,
     toPlanes, fromPlanes, blurPlanes, resize, resizeMask,
     cropData, flipData, rotate90Data, transformData, offsetData,
     FILTERS, applyFilter, curveLUT, histogram, makeLayer, Doc

@@ -231,6 +231,21 @@ test('bucket fill through a mask and gradient fill', () => {
   E.fillGradient(g, w, h, null, 0, 0, 4, 0, 'linear', { r: 0, g: 0, b: 0, a: 1 }, { r: 255, g: 255, b: 255, a: 1 }, 1);
   assert.ok(g[0] < g[4] && g[4] < g[8] && g[8] < g[12]);
 });
+test('convolve brush blends towards the blurred copy and respects selection', () => {
+  const w = 3, orig = new Uint8ClampedArray([0, 0, 0, 255, 100, 100, 100, 255, 200, 200, 200, 255]);
+  const blurred = new Uint8ClampedArray([100, 100, 100, 255, 100, 100, 100, 255, 100, 100, 100, 255]);
+  const cov = new Float32Array([1, 1, 1]), box = { x0: 0, y0: 0, x1: 2, y1: 0 };
+  const dest = new Uint8ClampedArray(orig);
+  E.applyConvolve(dest, orig, blurred, w, box, cov, new Uint8Array([255, 0, 255]), 0.5, false);
+  assert.equal(dest[0], 50);
+  assert.equal(dest[4], 100);
+  assert.equal(dest[8], 150);
+  const sharp = new Uint8ClampedArray(orig);
+  E.applyConvolve(sharp, orig, blurred, w, box, cov, null, 0.5, true);
+  assert.equal(sharp[0], 0);
+  assert.equal(sharp[8], 250);
+});
+
 test('dodge brightens, burn darkens', () => {
   const mk = () => new Uint8ClampedArray([100, 100, 100, 255]), cov = new Float32Array([1]), box = { x0: 0, y0: 0, x1: 0, y1: 0 };
   const a = mk(); E.applyDodgeBurn(a, 1, box, cov, null, false, 0.5, 'midtones'); assert.ok(a[0] > 100);

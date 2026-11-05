@@ -13,6 +13,8 @@ const TOOLS = [
   { id: 'airbrush', name: 'Aerógrafo', key: 'A', icon: 'airbrush', opts: ['size', 'hardness', 'flow', 'opacity'], hint: 'La pintura se acumula mientras mantienes pulsado.' },
   { id: 'clone', name: 'Clonar', key: 'C', icon: 'clone', opts: ['size', 'hardness', 'opacity'], hint: 'Ctrl+clic fija el origen y luego pinta.' },
   { id: 'dodgeburn', name: 'Sobreexponer / subexponer', key: 'Shift+D', icon: 'dodge', opts: ['size', 'hardness', 'exposure', 'dbMode', 'dbRange'], hint: 'Aclara u oscurece. Ctrl invierte el modo.' },
+  { id: 'blur', name: 'Desenfocar / enfocar', key: 'Shift+U', icon: 'blur', opts: ['size', 'hardness', 'opacity', 'strength', 'blurMode', 'blurRadius'], hint: 'Pinta para desenfocar o enfocar la capa.' },
+  { id: 'smudge', name: 'Manchar', key: 'S', icon: 'smudge', opts: ['size', 'hardness', 'opacity', 'strength', 'flow'], hint: 'Arrastra para arrastrar el color de la zona.' },
   { id: 'bucket', name: 'Cubo de pintura', key: 'Shift+B', icon: 'bucket', opts: ['fillMode', 'threshold', 'sampleMerged', 'opacity'], hint: 'Ctrl+clic rellena con el color de fondo.' },
   { id: 'gradient', name: 'Degradado', key: 'G', icon: 'gradient', opts: ['gradShape', 'gradColors', 'opacity'], hint: 'Arrastra de inicio a fin.' },
   { id: 'picker', name: 'Cuentagotas', key: 'O', icon: 'picker', opts: ['pickSample'], hint: 'Clic = color de frente, Alt+clic = color de fondo.' },
@@ -29,6 +31,9 @@ const OPTDEFS = {
   spacing: { label: 'Espaciado', type: 'range', min: 0.02, max: 1, step: 0.01, fmt: (v) => Math.round(v * 100) + '%' },
   flow: { label: 'Flujo', type: 'range', min: 0.02, max: 1, step: 0.01, fmt: (v) => Math.round(v * 100) + '%' },
   exposure: { label: 'Exposición', type: 'range', min: 0.02, max: 1, step: 0.01, fmt: (v) => Math.round(v * 100) + '%' },
+  strength: { label: 'Intensidad', type: 'range', min: 0.05, max: 1, step: 0.01, fmt: (v) => Math.round(v * 100) + '%' },
+  blurMode: { type: 'seg', options: [['blur', 'Desenfocar'], ['sharpen', 'Enfocar']] },
+  blurRadius: { label: 'Radio', type: 'range', min: 1, max: 40, step: 0.5, fmt: (v) => v + ' px' },
   selmode: { type: 'seg', options: [['replace', 'Nueva'], ['add', 'Añadir'], ['subtract', 'Restar'], ['intersect', 'Intersecar']] },
   aa: { label: 'Suavizar bordes', type: 'check' },
   threshold: { label: 'Umbral', type: 'range', min: 0, max: 255, step: 1, fmt: (v) => String(v) },
@@ -249,7 +254,7 @@ function makeCrop() {
 /* ---------- painting (pencil, brush, eraser, airbrush, clone, dodge/burn) ---------- */
 function makePaint(kind) {
   let st = null;
-  const label = { pencil: 'Lápiz', paintbrush: 'Pincel', eraser: 'Borrador', airbrush: 'Aerógrafo', clone: 'Clonar', dodgeburn: 'Sobreexponer/subexponer' }[kind];
+  const label = { pencil: 'Lápiz', paintbrush: 'Pincel', eraser: 'Borrador', airbrush: 'Aerógrafo', clone: 'Clonar', dodgeburn: 'Sobreexponer/subexponer', blur: 'Desenfocar/enfocar', smudge: 'Manchar' }[kind];
   function applyBox(box) {
     const d = S.doc, o = S.opts, L = st.L, w = d.w, sel = d.selection;
     if (st.target === 'mask') {
@@ -259,6 +264,11 @@ function makePaint(kind) {
     } else if (kind === 'dodgeburn') {
       for (let y = box.y0; y <= box.y1; y++) L.data.set(st.orig.data.subarray((y * w + box.x0) * 4, (y * w + box.x1 + 1) * 4), (y * w + box.x0) * 4);
       E.applyDodgeBurn(L.data, w, box, st.cov, sel, (o.dbMode === 'burn') !== st.ctrl, o.exposure, o.dbRange);
+    } else if (kind === 'blur') {
+      for (let y = box.y0; y <= box.y1; y++) L.data.set(st.orig.data.subarray((y * w + box.x0) * 4, (y * w + box.x1 + 1) * 4), (y * w + box.x0) * 4);
+      E.applyConvolve(L.data, st.orig.data, st.blurred, w, box, st.cov, sel, o.strength * o.opacity, o.blurMode === 'sharpen');
+    } else if (kind === 'smudge') {
+      E.applyClone(L.data, L.data, L.data, w, d.h, st.cov, box, sel, st.smOff[0], st.smOff[1], o.opacity * o.strength, L.lockAlpha);
     } else {
       E.applyCoverage(L.data, st.orig.data, w, st.cov, box, sel, S.fg, o.opacity, { erase: kind === 'eraser', lockAlpha: L.lockAlpha && kind !== 'eraser' });
     }
@@ -267,6 +277,8 @@ function makePaint(kind) {
   function stamp(x, y) {
     const d = S.doc, o = S.opts, pen = st.pen && o.dyn;
     let size = o.size * (pen ? clamp(st.pressure * 1.6, 0.12, 1) : 1); if (kind === 'pencil') size = Math.max(1, Math.round(size));
+    const prev = st.prev || [x, y]; st.prev = [x, y];
+    if (kind === 'smudge') st.smOff = [prev[0] - x, prev[1] - y];
     const box = E.stampDab(st.cov, d.w, d.h, x, y, size, kind === 'pencil' ? 1 : o.hardness, kind !== 'pencil', kind === 'airbrush' ? o.flow : 1, kind === 'airbrush');
     st.box = unionBox(st.box, box); applyBox(box);
   }
@@ -283,8 +295,10 @@ function makePaint(kind) {
       if (kind === 'clone' && !S.cloneSrc) { toast('Ctrl+clic para elegir el origen del clonado.'); return; }
       const target = d.editMask ? 'mask' : 'data';
       if (target === 'mask' && !L.mask) { toast('Esta capa no tiene máscara.'); return; }
+      if (target === 'mask' && (kind === 'blur' || kind === 'smudge')) { toast('Estas herramientas solo pintan en la capa, no en la máscara.'); return; }
       const orig = d.beginOp(label, L, target);
-      st = { L, target, orig, cov: ensureCov(), box: null, last: [ev.x, ev.y], pressure: ev.pressure, pen: ev.pointerType === 'pen', ctrl: ev.ctrl, timer: 0, off: kind === 'clone' ? { dx: S.cloneSrc.x - ev.x, dy: S.cloneSrc.y - ev.y } : null };
+      st = { L, target, orig, cov: ensureCov(), box: null, last: [ev.x, ev.y], prev: [ev.x, ev.y], pressure: ev.pressure, pen: ev.pointerType === 'pen', ctrl: ev.ctrl, timer: 0, smOff: [0, 0], off: kind === 'clone' ? { dx: S.cloneSrc.x - ev.x, dy: S.cloneSrc.y - ev.y } : null };
+      if (kind === 'blur') st.blurred = E.applyFilter('gaussian_blur', st.orig.data, d.w, d.h, { radius: S.opts.blurRadius });
       const spacing = kind === 'pencil' ? 1 : Math.max(1, S.opts.size * S.opts.spacing);
       st.stroker = new E.Stroker(spacing, stamp); st.stroker.begin(ev.x, ev.y);
       if (kind === 'airbrush') st.timer = setInterval(() => { if (st) stamp(st.last[0], st.last[1]); }, 60);
@@ -403,7 +417,7 @@ function makeZoom() {
 const TOOL_IMPL = {
   rect: makeBoxSelect('rect'), ellipse: makeBoxSelect('ellipse'), free: makeFreeSelect(), fuzzy: makeColorSelect(true), bycolor: makeColorSelect(false),
   move: makeMove(), crop: makeCrop(), pencil: makePaint('pencil'), paintbrush: makePaint('paintbrush'), eraser: makePaint('eraser'), airbrush: makePaint('airbrush'),
-  clone: makePaint('clone'), dodgeburn: makePaint('dodgeburn'), bucket: makeBucket(), gradient: makeGradient(), picker: makePicker(), text: makeText(), zoom: makeZoom(), hand: { cursor: 'grab' }
+  clone: makePaint('clone'), dodgeburn: makePaint('dodgeburn'), blur: makePaint('blur'), smudge: makePaint('smudge'), bucket: makeBucket(), gradient: makeGradient(), picker: makePicker(), text: makeText(), zoom: makeZoom(), hand: { cursor: 'grab' }
 };
 
 function selectTool(id) {

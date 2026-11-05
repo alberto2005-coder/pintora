@@ -36,6 +36,8 @@ const ICONS = {
   airbrush: '<path d="M4 14l5-5 5 5-5 5z"/><path d="M14 8l5-5M16 12h4M12 6V2"/><circle cx="19" cy="16" r=".6"/><circle cx="21" cy="19" r=".6"/><circle cx="17" cy="20" r=".6"/>',
   clone: '<rect x="9" y="3" width="6" height="8" rx="3"/><path d="M12 11v3M5 21v-3a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v3z"/>',
   dodge: '<circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor" stroke="none"/>',
+  blur: '<circle cx="12" cy="12" r="8" stroke-dasharray="2 3"/><path d="M12 4v3M12 17v3M4 12h3M17 12h3" stroke-opacity=".55"/>',
+  smudge: '<path d="M5 17c4 0 4-7 8-7s2 8 6 8"/><path d="M5 12c4 0 4-5 8-5s3 6 6 6" stroke-opacity=".5"/>',
   bucket: '<path d="M5 11l7-7 7 7-6 6a2 2 0 0 1-2.8 0L5 13.8a2 2 0 0 1 0-2.8z"/><path d="M5 11h14M20 16c1 1.5 1.5 2.5 1.5 3.2a1.5 1.5 0 0 1-3 0c0-.7.5-1.7 1.5-3.2z"/>',
   gradient: '<rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 5v14M12 5v14M16 5v14" stroke-opacity=".5"/>',
   picker: '<path d="M14.5 4.5l5 5M17 7l-9 9-1 3 3-1 9-9"/><path d="M15 3.5a2 2 0 0 1 3 0l2.5 2.5a2 2 0 0 1 0 3"/>',
@@ -83,7 +85,8 @@ const S = {
   opts: {
     size: 24, hardness: 0.6, opacity: 1, spacing: 0.12, flow: 0.25, exposure: 0.35,
     selmode: 'replace', threshold: 20, sampleMerged: false, fillMode: 'similar', gradShape: 'linear', gradColors: 'fgbg',
-    moveTarget: 'layer', dbMode: 'dodge', dbRange: 'midtones', aa: true, pickSample: 'merged', dyn: true
+    moveTarget: 'layer', dbMode: 'dodge', dbRange: 'midtones', aa: true, pickSample: 'merged', dyn: true,
+    strength: 0.5, blurMode: 'blur', blurRadius: 4
   }
 };
 const MAX_DIM = 8192;
