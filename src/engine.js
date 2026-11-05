@@ -1056,6 +1056,18 @@
     return out;
   }
 
+  /** 256-bin histograms of the RGBA buffer plus luminance. `step` samples every Nth pixel. */
+  function histogram(data, step) {
+    const r = new Uint32Array(256), g = new Uint32Array(256), b = new Uint32Array(256), a = new Uint32Array(256), luma = new Uint32Array(256);
+    let n = 0; const inc = Math.max(1, Math.round(step || 1));
+    for (let i = 0; i < data.length; i += 4 * inc) {
+      r[data[i]]++; g[data[i + 1]]++; b[data[i + 2]]++; a[data[i + 3]]++;
+      luma[Math.round(data[i] * RL + data[i + 1] * GL + data[i + 2] * BL)]++;
+      if (data[i + 3]) n++;
+    }
+    return { r, g, b, a, luma, n };
+  }
+
   /* --------------------------------------------------------- document model */
   let layerSeq = 1;
   function makeLayer(w, h, name, fill) {
@@ -1220,6 +1232,6 @@
     stampDab, applyCoverage, applyCoverageMask, applyClone, applyDodgeBurn, Stroker, fillMask, fillGradient,
     toPlanes, fromPlanes, blurPlanes, resize, resizeMask,
     cropData, flipData, rotate90Data, transformData, offsetData,
-    FILTERS, applyFilter, makeLayer, Doc
+    FILTERS, applyFilter, histogram, makeLayer, Doc
   };
 });

@@ -166,6 +166,35 @@ function setupLayerDock() {
   btn('plus', 'Nueva capa', () => newLayerDialog()); btn('copy', 'Duplicar capa', () => A.dupLayer()); btn('up', 'Subir capa', () => A.moveLayer(1)); btn('down', 'Bajar capa', () => A.moveLayer(-1)); btn('merge', 'Combinar hacia abajo', () => A.mergeDown()); btn('mask', 'Añadir máscara de capa', () => A.addMask('white')); btn('trash', 'Eliminar capa', () => A.delLayer());
 }
 
+/* ---------------- histogram ---------------- */
+function refreshHistogram() {
+  const c = $('#histBox'), d = S.doc; if (!c || !d) return;
+  flushDirty();
+  const h = E.histogram(S.flat);
+  const g = c.getContext('2d'), w = c.width, hh = c.height, top = 6, bottom = hh - 2;
+  g.clearRect(0, 0, w, hh);
+  const max = Math.max(1, ...h.luma);
+  const y = (v) => bottom - Math.log1p(v) / Math.log1p(max) * (bottom - top);
+  const line = (bins, color, fill) => {
+    g.beginPath(); g.moveTo(0, bottom);
+    for (let i = 0; i < 256; i++) g.lineTo(i / 255 * w, y(bins[i]));
+    g.lineTo(w, bottom); g.closePath();
+    if (fill) { g.fillStyle = color; g.fill(); }
+    else { g.strokeStyle = color; g.lineWidth = 1.2; g.stroke(); }
+  };
+  line(h.r, 'rgba(226, 74, 58, .55)', true);
+  line(h.g, 'rgba(52, 168, 100, .55)', true);
+  line(h.b, 'rgba(58, 110, 220, .55)', true);
+  const cs = getComputedStyle(document.documentElement).getPropertyValue('--text').trim() || '#888';
+  line(h.luma, cs, false);
+  g.strokeStyle = 'rgba(128, 128, 128, .35)'; g.lineWidth = 1;
+  g.beginPath(); for (let i = 1; i < 4; i++) { const x = Math.round(w * i / 4) + .5; g.moveTo(x, top); g.lineTo(x, bottom); } g.stroke();
+  let sum = 0, count = 0;
+  for (let i = 0; i < 256; i++) { sum += i * h.luma[i]; count += h.luma[i]; }
+  const mean = count ? (sum / count).toFixed(1) : '—';
+  $('#histLegend').textContent = h.n ? h.n.toLocaleString('es') + ' px con alfa · luminancia media ' + mean : 'Imagen vacía';
+}
+
 /* ---------------- history + status ---------------- */
 function refreshHistory() {
   const d = S.doc; if (!d) return; const list = $('#histList'); list.textContent = '';

@@ -20,7 +20,7 @@
     </section>
     <aside class="docks" id="docks">
       <div class="dock-tabs" id="dockTabs">
-        <button data-dock="color">Color</button><button data-dock="layers" class="on">Capas</button><button data-dock="history">Historial</button>
+        <button data-dock="color">Color</button><button data-dock="layers" class="on">Capas</button><button data-dock="history">Historial</button><button data-dock="hist">Histograma</button>
       </div>
       <section class="dock color" data-dock="color">
         <h3>Color</h3>
@@ -44,6 +44,11 @@
       <section class="dock history" data-dock="history">
         <h3>Historial</h3>
         <div class="histlist" id="histList"></div>
+      </section>
+      <section class="dock hist" data-dock="hist">
+        <h3>Histograma</h3>
+        <canvas id="histBox" width="260" height="104" aria-label="Histograma de la imagen"></canvas>
+        <div class="histlegend" id="histLegend"></div>
       </section>
     </aside>
   </div>

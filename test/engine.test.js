@@ -326,6 +326,17 @@ test('offset with wrap', () => {
   assert.deepEqual([0, 1, 2].map((i) => E.offsetData(d, 3, 1, 1, 0, false)[i * 4]), [0, 1, 2]);
 });
 
+/* ---- histogram ---- */
+test('histogram counts each channel, alpha and luminance', () => {
+  const d = new Uint8ClampedArray([255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 0]);
+  const h = E.histogram(d);
+  assert.equal(h.r[255], 1); assert.equal(h.g[255], 1); assert.equal(h.b[255], 1);
+  assert.equal(h.a[255], 2); assert.equal(h.a[0], 1);
+  assert.equal(h.n, 2);
+  assert.equal(h.luma.reduce((a, b) => a + b, 0), 3);
+  assert.equal(E.histogram(d, 3).n, 1);
+});
+
 /* ---- document & history ---- */
 test('document layers: add, duplicate, move, remove, merge, flatten', () => {
   const doc = new E.Doc(4, 4); const bg = doc.addLayer('Fondo', { r: 255, g: 255, b: 255 });

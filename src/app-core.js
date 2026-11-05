@@ -137,7 +137,7 @@ function docChanged(rect) {
   if (S.flatImg.width !== S.doc.w || S.flatImg.height !== S.doc.h) resizeBuffers(); else invalidate(rect || null);
   refreshAll(); queueAutosave();
 }
-function refreshAll() { refreshLayers(); refreshHistory(); refreshStatus(); refreshUndoButtons(); }
+function refreshAll() { refreshLayers(); refreshHistory(); refreshStatus(); refreshUndoButtons(); refreshHistogram(); }
 
 /* ---------------- view ---------------- */
 const viewEl = () => $('#view');
