@@ -296,8 +296,18 @@ async function saveBlob(name, blob) {
 }
 function baseName() { return (S.name || 'imagen').replace(/\.(pintora\.json|json|png|jpe?g|webp)$/i, ''); }
 
-async function exportImage(fmt, quality, bg) {
+async function exportImage(fmt, quality, bg, delay) {
   const d = S.doc; flushDirty();
+  if (fmt === 'tiff') {
+    const buf = PintoraFormats.writeTiff(E.flattenOn(d.layers, d.w, d.h), d.w, d.h);
+    await saveBlob(baseName() + '.tiff', new Blob([buf], { type: 'image/tiff' })); return;
+  }
+  if (fmt === 'gif') {
+    const frames = d.layers.filter((l) => l.visible).map((l) => E.composite([l], d.w, d.h, new Uint8ClampedArray(d.w * d.h * 4)));
+    if (!frames.length) frames.push(E.flattenOn(d.layers, d.w, d.h));
+    const bytes = PintoraFormats.writeGif(frames, d.w, d.h, delay);
+    await saveBlob(baseName() + '.gif', new Blob([bytes], { type: 'image/gif' })); return;
+  }
   const data = fmt === 'jpeg' ? E.flattenOn(d.layers, d.w, d.h, bg) : S.flat;
   const c = dataToCanvas(data, d.w, d.h);
   const mime = fmt === 'jpeg' ? 'image/jpeg' : fmt === 'webp' ? 'image/webp' : 'image/png';
@@ -435,6 +445,8 @@ async function openFiles(files, asLayers) {
         await loadProject(await f.text(), f.name); toast('Proyecto abierto: ' + f.name); continue;
       }
       if (/\.psd$/i.test(f.name)) { await openPsd(f, asLayers); continue; }
+      if (/\.tiff?$/i.test(f.name)) { await openTiff(f, asLayers); continue; }
+      if (/\.gif$/i.test(f.name)) { await openGif(f, asLayers); continue; }
       const im = await decodeImage(f);
       if (asLayers && S.doc) addImageAsLayer(im, f.name);
       else { if (!(await confirmDiscard())) return; openAsDocument(im, f.name); }
@@ -484,6 +496,19 @@ async function openPsd(file, asLayers) {
   doc.activeId = doc.layers[doc.layers.length - 1].id;
   setDoc(doc, file.name.replace(/\.psd$/i, '')); S.modified = false;
   toast('PSD: ' + doc.layers.length + ' capas · ' + psd.w + '×' + psd.h + ' px');
+}
+async function openDecoded(im, name, asLayers) {
+  if (asLayers && S.doc) { addImageAsLayer(im, name); return; }
+  if (!(await confirmDiscard())) return;
+  openAsDocument(im, name);
+}
+async function openTiff(file, asLayers) {
+  await openDecoded(PintoraFormats.readTiff(await file.arrayBuffer()), file.name, asLayers);
+}
+async function openGif(file, asLayers) {
+  const gif = PintoraFormats.readGif(await file.arrayBuffer());
+  await openDecoded({ w: gif.w, h: gif.h, data: gif.data }, file.name, asLayers);
+  if (gif.frames > 1) toast('GIF: abierto el primer fotograma de ' + gif.frames);
 }
 async function savePsd() {
   const d = S.doc; flushDirty();

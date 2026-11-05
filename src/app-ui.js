@@ -237,7 +237,12 @@ function newLayerDialog() {
     onOk(v) { const f = v.fill === 'fg' ? S.fg : v.fill === 'bg' ? S.bg : v.fill === 'white' ? { r: 255, g: 255, b: 255 } : null; const L = S.doc.addLayer(v.name.trim() || 'Capa', f); L.mode = v.mode; docChanged(); } });
 }
 function exportDialog() {
-  dialog({ title: 'Exportar imagen', fields: [{ id: 'fmt', label: 'Formato', type: 'select', options: [['png', 'PNG (sin pérdida, con transparencia)'], ['jpeg', 'JPEG'], ['webp', 'WebP']], value: 'png' }, { id: 'q', label: 'Calidad', type: 'range', min: 1, max: 100, value: 90 }, { id: 'bg', label: 'Fondo (JPEG)', type: 'color', value: '#ffffff', note: 'Sustituye la transparencia' }], ok: 'Exportar', onOk: (v) => exportImage(v.fmt, v.q / 100, E.hexToRgb(v.bg)) });
+  dialog({ title: 'Exportar imagen', fields: [
+    { id: 'fmt', label: 'Formato', type: 'select', options: [['png', 'PNG (sin pérdida, con transparencia)'], ['jpeg', 'JPEG'], ['webp', 'WebP'], ['tiff', 'TIFF (sin pérdida)'], ['gif', 'GIF animado (una capa visible por fotograma)']], value: 'png' },
+    { id: 'q', label: 'Calidad', type: 'range', min: 1, max: 100, value: 90 },
+    { id: 'bg', label: 'Fondo (JPEG)', type: 'color', value: '#ffffff', note: 'Sustituye la transparencia' },
+    { id: 'delay', label: 'Fotograma GIF (ms)', type: 'range', min: 20, max: 1000, step: 10, value: 100, note: 'Solo para GIF animado' }
+  ], ok: 'Exportar', onOk: (v) => exportImage(v.fmt, v.q / 100, E.hexToRgb(v.bg), v.delay) });
 }
 function scaleImageDialog() {
   const d = S.doc, ratio = d.w / d.h;

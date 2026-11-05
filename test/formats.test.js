@@ -41,6 +41,25 @@ test('PSD round trip keeps size, layer names, pixels, opacity and blend mode', (
   assert.deepEqual(Array.from(m.data), Array.from(b));
 });
 
+test('TIFF round trip keeps pixels and size', () => {
+  const data = new Uint8ClampedArray([255, 0, 0, 255, 0, 255, 0, 255]);
+  const back = F.readTiff(F.writeTiff(data, 2, 1));
+  assert.equal(back.w, 2);
+  assert.equal(back.h, 1);
+  assert.deepEqual(Array.from(back.data.slice(0, 4)), [255, 0, 0, 255]);
+  assert.deepEqual(Array.from(back.data.slice(4, 8)), [0, 255, 0, 255]);
+});
+
+test('GIF round trip keeps frames and size', () => {
+  const red = new Uint8ClampedArray([255, 0, 0, 255, 255, 0, 0, 255]);
+  const blue = new Uint8ClampedArray([0, 0, 255, 255, 0, 0, 255, 255]);
+  const gif = F.readGif(F.writeGif([red, blue], 2, 1, 80));
+  assert.equal(gif.frames, 2);
+  assert.equal(gif.w, 2);
+  assert.equal(gif.h, 1);
+  assert.ok(gif.data[0] > 200 && gif.data[1] < 60 && gif.data[2] < 60, 'first frame is red');
+});
+
 test('PSD layer rectangles keep their offset', () => {
   const layer = new Uint8ClampedArray([1, 2, 3, 255]);
   const buf = F.writePsd({ w: 4, h: 4, layers: [{ name: 'Pequeña', data: layer, opacity: 1, visible: true, mode: 'normal' }] });

@@ -1,9 +1,9 @@
 /* Pintora format helpers: conversion between the editor model and PSD files.
  * Pure data; no DOM. Loaded as a module in Node tests and as window.PintoraFormats in the page. */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('ag-psd'));
-  else root.PintoraFormats = factory(root.PintoraLibs.psd);
-})(typeof self !== 'undefined' ? self : this, function (psdLib) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('ag-psd'), require('utif'), require('omggif').GifReader, require('gifenc'));
+  else root.PintoraFormats = factory(root.PintoraLibs.psd, root.PintoraLibs.UTIF, root.PintoraLibs.gif.GifReader, root.PintoraLibs.gif);
+})(typeof self !== 'undefined' ? self : this, function (psdLib, UTIF, GifReader, gifencLib) {
   'use strict';
 
   const TO_PSD = {
@@ -88,5 +88,38 @@
     return psdLib.writePsd(out, { generateThumbnail: false });
   }
 
-  return { toPsdBlend, fromPsdBlend, readPsd, writePsd };
+  /** First page of a TIFF as RGBA. */
+  function readTiff(buffer) {
+    const ifds = UTIF.decode(buffer);
+    if (!ifds.length) throw new Error('El TIFF no tiene páginas.');
+    UTIF.decodeImage(buffer, ifds[0]);
+    return { w: ifds[0].width, h: ifds[0].height, data: new Uint8ClampedArray(UTIF.toRGBA8(ifds[0])) };
+  }
+  function writeTiff(data, w, h) {
+    return UTIF.encodeImage(new Uint8Array(data), w, h);
+  }
+
+  /** First frame of a GIF as RGBA; `frames` reports how many the file has. */
+  function readGif(buffer) {
+    const reader = new GifReader(new Uint8Array(buffer));
+    const w = reader.width, h = reader.height, data = new Uint8ClampedArray(w * h * 4), frames = reader.numFrames();
+    if (frames) reader.decodeAndBlitFrameRGBA(0, data);
+    return { w, h, data, frames };
+  }
+  /** Animated GIF with one RGBA frame per layer. */
+  function writeGif(frames, w, h, delayMs) {
+    const gif = gifencLib.GIFEncoder(), delay = Math.max(20, Math.round(delayMs || 100));
+    for (const frame of frames) {
+      const palette = gifencLib.quantize(frame, 256, { format: 'rgba4444', oneBitAlpha: true });
+      const index = gifencLib.applyPalette(frame, palette, 'rgba4444');
+      const opts = { palette, delay, dispose: 2 };
+      const transparentIndex = palette.findIndex((c) => c.length > 3 && c[3] === 0);
+      if (transparentIndex >= 0) { opts.transparent = true; opts.transparentIndex = transparentIndex; }
+      gif.writeFrame(index, w, h, opts);
+    }
+    gif.finish();
+    return gif.bytes();
+  }
+
+  return { toPsdBlend, fromPsdBlend, readPsd, writePsd, readTiff, writeTiff, readGif, writeGif };
 });
