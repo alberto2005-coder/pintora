@@ -831,6 +831,41 @@
     return out;
   }
 
+  /** Monotone cubic LUT from normalized control points [[x,y],...] sorted by x. */
+  function curveLUT(points, size) {
+    const n = size || 256;
+    let src = (points && points.length >= 2 ? points : [[0, 0], [1, 1]])
+      .map((p) => [clamp(p[0], 0, 1), clamp(p[1], 0, 1)]).sort((a, b) => a[0] - b[0]);
+    const xs = [], ys = [];
+    for (const p of src) {
+      if (xs.length && Math.abs(p[0] - xs[xs.length - 1]) < 1e-6) ys[ys.length - 1] = p[1];
+      else { xs.push(p[0]); ys.push(p[1]); }
+    }
+    if (xs.length < 2) { xs.unshift(0); ys.unshift(0); xs.push(1); ys.push(1); }
+    const m = xs.length, delta = [], t = new Array(m);
+    for (let i = 0; i < m - 1; i++) delta.push((ys[i + 1] - ys[i]) / (xs[i + 1] - xs[i] || 1e-6));
+    t[0] = delta[0]; t[m - 1] = delta[m - 2];
+    for (let i = 1; i < m - 1; i++) t[i] = (delta[i - 1] + delta[i]) / 2;
+    for (let i = 0; i < m - 1; i++) {
+      if (Math.abs(delta[i]) < 1e-12) { t[i] = 0; t[i + 1] = 0; continue; }
+      const a = t[i] / delta[i], b = t[i + 1] / delta[i], s = a * a + b * b;
+      if (s > 9) { const k = 3 / Math.sqrt(s); t[i] = k * a * delta[i]; t[i + 1] = k * b * delta[i]; }
+    }
+    const lut = new Uint8ClampedArray(n);
+    for (let i = 0; i < n; i++) {
+      const x = i / (n - 1);
+      if (x <= xs[0]) { lut[i] = Math.round(ys[0] * 255); continue; }
+      if (x >= xs[m - 1]) { lut[i] = Math.round(ys[m - 1] * 255); continue; }
+      let k = 0; while (k < m - 2 && x > xs[k + 1]) k++;
+      const h = xs[k + 1] - xs[k], u = (x - xs[k]) / h;
+      const h00 = 2 * u * u * u - 3 * u * u + 1, h10 = u * u * u - 2 * u * u + u;
+      const h01 = -2 * u * u * u + 3 * u * u, h11 = u * u * u - u * u;
+      const v = h00 * ys[k] + h10 * h * t[k] + h01 * ys[k + 1] + h11 * h * t[k + 1];
+      lut[i] = Math.round(clamp(v, 0, 1) * 255);
+    }
+    return lut;
+  }
+
   const FILTERS = {
     brightness_contrast: {
       name: 'Brillo y contraste', group: 'Colores',
@@ -914,6 +949,25 @@
         for (let i = 0; i < src.length; i += 4) { if (!src[i + 3]) continue; for (let c = 0; c < 3; c++) { if (src[i + c] < lo[c]) lo[c] = src[i + c]; if (src[i + c] > hi[c]) hi[c] = src[i + c]; } }
         for (let i = 0; i < src.length; i += 4) {
           for (let c = 0; c < 3; c++) out[i + c] = hi[c] > lo[c] ? (src[i + c] - lo[c]) * 255 / (hi[c] - lo[c]) : src[i + c];
+          out[i + 3] = src[i + 3];
+        }
+        return out;
+      }
+    },
+    curves: {
+      name: 'Curvas', group: 'Colores',
+      params: [
+        { id: 'channel', label: 'Canal', type: 'select', options: [['rgb', 'RGB'], ['r', 'Rojo'], ['g', 'Verde'], ['b', 'Azul']], def: 'rgb' },
+        { id: 'points', label: 'Curva', type: 'points', def: { rgb: [[0, 0], [1, 1]], r: [[0, 0], [1, 1]], g: [[0, 0], [1, 1]], b: [[0, 0], [1, 1]] } }
+      ],
+      run: (src, w, h, p) => {
+        const pts = p.points || {};
+        const master = curveLUT(pts.rgb), lr = curveLUT(pts.r), lg = curveLUT(pts.g), lb = curveLUT(pts.b);
+        const out = new Uint8ClampedArray(src.length);
+        for (let i = 0; i < src.length; i += 4) {
+          out[i] = lr[master[src[i]]];
+          out[i + 1] = lg[master[src[i + 1]]];
+          out[i + 2] = lb[master[src[i + 2]]];
           out[i + 3] = src[i + 3];
         }
         return out;
@@ -1232,6 +1286,6 @@
     stampDab, applyCoverage, applyCoverageMask, applyClone, applyDodgeBurn, Stroker, fillMask, fillGradient,
     toPlanes, fromPlanes, blurPlanes, resize, resizeMask,
     cropData, flipData, rotate90Data, transformData, offsetData,
-    FILTERS, applyFilter, histogram, makeLayer, Doc
+    FILTERS, applyFilter, curveLUT, histogram, makeLayer, Doc
   };
 });

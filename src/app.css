@@ -154,6 +154,10 @@ html.native .app { padding-inline: 0; }
 .field .note { color: var(--muted); font-size: 12px; }
 .dialog .info { color: var(--muted); }
 .dialog kbd, .kbdtable td:first-child { font: 12px var(--font-ui); background: var(--panel-hi); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
+.curvewrap { display: grid; gap: 6px; }
+.curvepad { width: 100%; max-width: 292px; aspect-ratio: 1; border: 1px solid var(--line); border-radius: 6px; touch-action: none; cursor: crosshair; justify-self: center; }
+.curverow { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
+.curverow .note { color: var(--muted); font-size: 11px; }
 .kbdtable { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .kbdtable td { padding: 3px 6px 3px 0; vertical-align: top; }
 .kbdtable td:first-child { display: table-cell; width: 1%; }

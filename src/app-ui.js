@@ -252,7 +252,86 @@ function canvasSizeDialog() {
 }
 function amountDialog(title, label, def, max, fn) { dialog({ title, fields: [{ id: 'n', label, type: 'range', min: 1, max, value: def }], ok: 'Aplicar', onOk: (v) => fn(Math.round(v.n)) }); }
 function selOp(label, fn) { const d = S.doc; if (!d.selection) { toast('No hay selección.'); return; } d.setSelection(fn(d.selection), label); S.modified = true; refreshAll(); schedule(); }
+function curvesDialog(preset) {
+  const L = needLayer(); if (!L) return;
+  const d = S.doc, base = L.data, size = 292, pad = 10, span = size - pad * 2;
+  const identity = () => [[0, 0], [1, 1]];
+  const copyPts = (p) => (p && p.length >= 2 ? p.map((q) => [q[0], q[1]]) : identity());
+  const pp = (preset && preset.points) || {};
+  const curves = { rgb: copyPts(pp.rgb), r: copyPts(pp.r), g: copyPts(pp.g), b: copyPts(pp.b) };
+  let chan = (preset && preset.channel) || 'rgb', drag = -1, timer = 0;
+  const canvas = h('canvas', { width: size, height: size, class: 'curvepad', 'aria-label': 'Editor de curva' });
+  const note = h('div', { class: 'note', text: 'Arrastra los puntos. Clic para añadir, clic derecho para quitar.' });
+  const reset = h('button', { class: 'btn', text: 'Restablecer canal' });
+  const wrap = h('div', { class: 'curvewrap' }, canvas, h('div', { class: 'curverow' }, note, reset));
+  const toPx = ([x, y]) => [pad + x * span, pad + (1 - y) * span];
+  const toCurve = (cx, cy) => [clamp((cx - pad) / span, 0, 1), clamp(1 - (cy - pad) / span, 0, 1)];
+  const redraw = () => {
+    const g = canvas.getContext('2d'), cs = getComputedStyle(document.documentElement);
+    g.clearRect(0, 0, size, size);
+    g.fillStyle = cs.getPropertyValue('--bg').trim() || '#222'; g.fillRect(0, 0, size, size);
+    g.strokeStyle = 'rgba(128,128,128,.28)'; g.lineWidth = 1; g.beginPath();
+    for (let i = 1; i < 4; i++) { const p = pad + span * i / 4; g.moveTo(p, pad); g.lineTo(p, pad + span); g.moveTo(pad, p); g.lineTo(pad + span, p); }
+    g.stroke();
+    g.setLineDash([4, 4]); g.beginPath(); g.moveTo(pad, pad + span); g.lineTo(pad + span, pad); g.stroke(); g.setLineDash([]);
+    const lut = E.curveLUT(curves[chan]);
+    g.strokeStyle = cs.getPropertyValue('--accent').trim() || '#e2a73a'; g.lineWidth = 2; g.beginPath();
+    for (let i = 0; i < 256; i++) { const x = pad + i / 255 * span, y = pad + (1 - lut[i] / 255) * span; if (i) g.lineTo(x, y); else g.moveTo(x, y); }
+    g.stroke();
+    g.fillStyle = '#fff'; g.strokeStyle = '#000'; g.lineWidth = 1;
+    for (const p of curves[chan]) { const [x, y] = toPx(p); g.beginPath(); g.arc(x, y, 4, 0, 7); g.fill(); g.stroke(); }
+  };
+  const preview = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => { S.preview = { id: L.id, data: E.applyFilter('curves', base, d.w, d.h, { points: curves }, d.selection) }; invalidate(null); }, 60);
+  };
+  const at = (ev) => {
+    const r = canvas.getBoundingClientRect();
+    return [(ev.clientX - r.left) * size / r.width, (ev.clientY - r.top) * size / r.height];
+  };
+  canvas.addEventListener('pointerdown', (ev) => {
+    ev.preventDefault();
+    const [sx, sy] = at(ev), pts = curves[chan];
+    let hit = -1, best = 13;
+    pts.forEach((p, i) => { const [x, y] = toPx(p), dd = Math.hypot(x - sx, y - sy); if (dd < best) { best = dd; hit = i; } });
+    if (ev.button === 2) { if (hit > 0 && hit < pts.length - 1) { pts.splice(hit, 1); redraw(); preview(); } return; }
+    if (hit < 0) { const c = toCurve(sx, sy); pts.push(c); pts.sort((a, b) => a[0] - b[0]); hit = pts.indexOf(c); }
+    drag = hit; try { canvas.setPointerCapture(ev.pointerId); } catch (e) { /* ignore */ } redraw();
+  });
+  canvas.addEventListener('pointermove', (ev) => {
+    if (drag < 0) return;
+    const [sx, sy] = at(ev), [cx, cy] = toCurve(sx, sy), pts = curves[chan], p = pts[drag];
+    if (drag === 0 || drag === pts.length - 1) p[1] = cy;
+    else { p[0] = clamp(cx, pts[drag - 1][0] + 0.005, pts[drag + 1][0] - 0.005); p[1] = cy; }
+    redraw(); preview();
+  });
+  canvas.addEventListener('pointerup', () => { if (drag >= 0) { drag = -1; preview(); } });
+  canvas.addEventListener('contextmenu', (ev) => ev.preventDefault());
+  reset.addEventListener('click', () => { curves[chan] = identity(); redraw(); preview(); });
+  dialog({
+    title: 'Curvas', wide: true, ok: 'Aplicar', node: wrap,
+    fields: [{ id: 'channel', label: 'Canal', type: 'select', options: [['rgb', 'RGB'], ['r', 'Rojo'], ['g', 'Verde'], ['b', 'Azul']], value: chan }],
+    onInput: (v, id) => { if (id === 'channel' || id === null) { chan = v.channel || 'rgb'; redraw(); } },
+    onOk: (v) => {
+      clearTimeout(timer); S.preview = null;
+      const points = { rgb: curves.rgb.map((q) => q.slice()), r: curves.r.map((q) => q.slice()), g: curves.g.map((q) => q.slice()), b: curves.b.map((q) => q.slice()) };
+      d.checkpoint('Curvas');
+      L.data = E.applyFilter('curves', base, d.w, d.h, { points }, d.selection);
+      S.lastFilter = { id: 'curves', vals: { points, channel: v.channel || 'rgb' } };
+      docChanged();
+    },
+    onCancel: () => { clearTimeout(timer); S.preview = null; invalidate(null); }
+  });
+  redraw(); preview();
+}
 function runFilter(id, preset) {
+  if (id === 'curves') {
+    if (!preset) { curvesDialog(); return; }
+    const LC = needLayer(); if (!LC) return;
+    const dC = S.doc; dC.checkpoint('Curvas');
+    LC.data = E.applyFilter('curves', LC.data, dC.w, dC.h, preset, dC.selection);
+    docChanged(); return;
+  }
   const L = needLayer(); if (!L) return; const f = E.FILTERS[id], d = S.doc, base = L.data;
   const commit = (vals) => { d.checkpoint(f.name); L.data = E.applyFilter(id, base, d.w, d.h, vals, d.selection); S.lastFilter = { id, vals }; docChanged(); };
   if (preset) { commit(preset); return; }

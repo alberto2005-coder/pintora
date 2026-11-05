@@ -291,6 +291,19 @@ test('pixelize makes uniform blocks', () => {
   const src = rnd(8, 8), o = E.applyFilter('pixelize', src, 8, 8, { size: 4 });
   assert.equal(o[0], o[4]); assert.equal(o[0], o[(3 * 8 + 3) * 4]);
 });
+test('curves: identity, inversion, channel isolation and monotone LUT', () => {
+  const src = new Uint8ClampedArray([0, 64, 128, 255, 255, 128, 64, 128]);
+  const id = E.applyFilter('curves', src, 2, 1, { points: { rgb: [[0, 0], [1, 1]] } });
+  assert.deepEqual(Array.from(id), Array.from(src));
+  const inv = E.applyFilter('curves', src, 2, 1, { points: { rgb: [[0, 1], [1, 0]] } });
+  assert.equal(inv[0], 255); assert.equal(inv[3], 255);
+  const red = E.applyFilter('curves', src, 2, 1, { points: { r: [[0, 1], [1, 0]] } });
+  assert.equal(red[0], 255); assert.equal(red[1], 64);
+  const lut = E.curveLUT([[0, 0], [0.25, 0.5], [0.5, 0.6], [1, 1]]);
+  for (let i = 1; i < lut.length; i++) assert.ok(lut[i] >= lut[i - 1], 'LUT is monotone at ' + i);
+  assert.equal(lut[0], 0); assert.equal(lut[255], 255);
+});
+
 test('noise is reproducible per seed', () => {
   const src = rnd(8, 8);
   const a = E.applyFilter('noise', src, 8, 8, { seed: 3 }), b = E.applyFilter('noise', src, 8, 8, { seed: 3 }), c = E.applyFilter('noise', src, 8, 8, { seed: 4 });
