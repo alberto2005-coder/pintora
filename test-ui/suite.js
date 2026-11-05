@@ -765,7 +765,7 @@
     doMenu('Ayuda', 'Acerca de Pintora');
     check($('.dialog header').textContent === 'Acerca de Pintora', 'No se abrió Acerca de');
     const aboutText = $('.dialog .body').textContent;
-    check(aboutText.includes('0.1.0') && aboutText.includes('22 herramientas') && aboutText.includes('PSD') && aboutText.includes('v4') && aboutText.includes('GPL-3.0-or-later'), 'Acerca de no refleja las capacidades actuales');
+    check(aboutText.includes('0.1.0') && aboutText.includes('22 herramientas') && aboutText.includes('PSD') && aboutText.includes('v4') && aboutText.includes('GPL-3.0-or-later') && aboutText.includes('GIMP 3.2.8'), 'Acerca de no refleja las capacidades actuales');
     await okDialog();
   });
 
@@ -832,7 +832,7 @@
     doMenu('Help', 'About Pintora');
     window.PintoraI18n.apply();
     const about = $('.dialog .body').textContent;
-    check(about.includes('22 tools') && about.includes('8/16-bit TIFF') && about.includes('ICC profile'), 'Acerca de no se tradujo: ' + about.slice(0, 160));
+    check(about.includes('22 tools') && about.includes('8/16-bit TIFF') && about.includes('ICC profile') && about.includes('GIMP 3.2.8'), 'Acerca de no se tradujo: ' + about.slice(0, 160));
     await okDialog();
     P.setLang('es');
     check($('#menus .menubtn').textContent.trim() === 'Archivo', 'No se pudo volver al español');

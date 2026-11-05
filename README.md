@@ -52,6 +52,8 @@ Los XCF de 16 bits se convierten al importar y el XCF exportado es RGBA de 8 bit
 vectoriales y editables en el documento, se rasterizan para pintar y se exportan a SVG. La gestión ICC
 admite perfiles RGB de matriz/TRC; los perfiles basados solo en LUT se rechazan con un mensaje claro.
 El XCF exportado conserva capas, opacidad, visibilidad, desplazamiento y modo de mezcla.
+El XCF v001 exportado se ha validado con GIMP 3.2.8: se abre como 32×24 px con las capas `Fondo` y
+`Capa propia` (opacidades 1,0 y 0,65), y exporta un PNG de 32×24.
 
 ### Pruebas
 
@@ -162,6 +164,8 @@ profile, but pixel tools, filters and selections still operate on the 8-bit buff
 exported XCF is 8-bit RGBA. Paths are vectorial and editable in the document, are rasterised for painting
 and can be exported to SVG. ICC management supports RGB matrix/TRC profiles; LUT-only profiles are
 rejected with a clear message. Exported XCF keeps layers, opacity, visibility, offsets and blend mode.
+The exported v001 XCF has been validated with GIMP 3.2.8: it opens as 32×24 px with the `Fondo` and
+`Capa propia` layers (opacities 1.0 and 0.65) and exports a 32×24 PNG.
 
 ### Tests
 

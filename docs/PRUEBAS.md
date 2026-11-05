@@ -39,6 +39,8 @@ demuestra el comportamiento visual del selector de archivos del sistema.
 
 Estas acciones dependen de la interfaz del sistema operativo o del entorno y no se automatizan:
 
+- Abrir el XCF exportado con GIMP 3.2.8 y comprobar dimensiones, capas, opacidades y exportación a
+  PNG; validado con 32×24 px, `Fondo` al 100 %, `Capa propia` al 65,098 % y PNG de 32×24.
 - Abrir un archivo con el selector nativo de Windows, macOS o Linux.
 - Arrastrar un archivo desde el Explorador o Finder.
 - Copiar una imagen desde otra aplicación y pegarla en Pintora, y al revés.
@@ -96,6 +98,8 @@ behaviour of the operating system file picker.
 
 These actions depend on the operating system interface or environment and are not automated:
 
+- Opening the exported XCF with GIMP 3.2.8 and checking dimensions, layers, opacities and PNG export;
+  validated at 32×24 px, `Fondo` at 100%, `Capa propia` at 65.098% and a 32×24 PNG.
 - Opening a file with the native Windows, macOS or Linux file picker.
 - Dragging a file from Explorer or Finder.
 - Copying an image from another application into Pintora and vice versa.
