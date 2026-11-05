@@ -246,7 +246,8 @@
         d: preview && preview.id === l.id ? preview.data : l.data,
         op: l.opacity,
         mask: l.mask && l.maskOn !== false ? l.mask : null,
-        mode: MODES[l.mode] || MODES.normal
+        mode: MODES[l.mode] || MODES.normal,
+        x: l.x || 0, y: l.y || 0, w: l.w || w, h: l.h || h
       });
     }
     const inV = [0, 0, 0], layV = [0, 0, 0], compV = [0, 0, 0], tmp = [0, 0, 0];
@@ -257,12 +258,15 @@
         let exact = -1; // index of a lone opaque normal layer -> exact bytes
         for (let k = 0; k < L.length; k++) {
           const ly = L[k], d = ly.d;
-          let la = d[i + 3] / 255 * ly.op;
-          if (ly.mask) la *= ly.mask[p] / 255;
+          const lx = x - ly.x, lyi = y - ly.y;
+          if (lx < 0 || lyi < 0 || lx >= ly.w || lyi >= ly.h) continue;
+          const li = lyi * ly.w + lx, ii = li * 4;
+          let la = d[ii + 3] / 255 * ly.op;
+          if (ly.mask) la *= ly.mask[li] / 255;
           if (la <= 0) continue;
           const mode = ly.mode;
           if (mode.id === 'dissolve') { la = dissolveNoise(x, y) < la ? 1 : 0; if (la === 0) continue; }
-          const lr = S2L[d[i]], lg = S2L[d[i + 1]], lb = S2L[d[i + 2]];
+          const lr = S2L[d[ii]], lg = S2L[d[ii + 1]], lb = S2L[d[ii + 2]];
           if (mode.id === 'normal' || mode.id === 'dissolve') {
             if (la >= 1) { ar = lr; ag = lg; ab = lb; aa = 1; exact = k; continue; }
             if (aa <= 0) { ar = lr; ag = lg; ab = lb; aa = la; exact = -1; continue; }
@@ -284,7 +288,7 @@
             inV[0] = ar; inV[1] = ag; inV[2] = ab; layV[0] = lr; layV[1] = lg; layV[2] = lb;
           } else if (mode.space === 'perceptual') {
             inV[0] = l2s(ar); inV[1] = l2s(ag); inV[2] = l2s(ab);
-            layV[0] = d[i] / 255; layV[1] = d[i + 1] / 255; layV[2] = d[i + 2] / 255;
+            layV[0] = d[ii] / 255; layV[1] = d[ii + 1] / 255; layV[2] = d[ii + 2] / 255;
           } else {
             linToLab(ar, ag, ab, inV); linToLab(lr, lg, lb, layV);
           }
@@ -302,7 +306,8 @@
         }
         if (aa <= 0) { out[i] = 0; out[i + 1] = 0; out[i + 2] = 0; out[i + 3] = 0; continue; }
         if (exact >= 0) {
-          const d = L[exact].d; out[i] = d[i]; out[i + 1] = d[i + 1]; out[i + 2] = d[i + 2]; out[i + 3] = 255;
+          const ly = L[exact], li = ((y - ly.y) * ly.w + (x - ly.x)) * 4, d = ly.d;
+          out[i] = d[li]; out[i + 1] = d[li + 1]; out[i + 2] = d[li + 2]; out[i + 3] = 255;
         } else {
           out[i] = lin2byte(ar); out[i + 1] = lin2byte(ag); out[i + 2] = lin2byte(ab); out[i + 3] = Math.round(aa * 255);
         }
@@ -1138,10 +1143,11 @@
 
   /* --------------------------------------------------------- document model */
   let layerSeq = 1;
-  function makeLayer(w, h, name, fill) {
+  function makeLayer(w, h, name, fill, x, y) {
     const l = {
       id: 'L' + layerSeq++, name: name || 'Capa', visible: true, opacity: 1, mode: 'normal',
-      lockAlpha: false, mask: null, maskOn: true, text: null, data: new Uint8ClampedArray(w * h * 4)
+      lockAlpha: false, mask: null, maskOn: true, text: null,
+      x: x || 0, y: y || 0, w, h, data: new Uint8ClampedArray(w * h * 4)
     };
     if (fill) for (let i = 0; i < w * h; i++) { l.data[i * 4] = fill.r; l.data[i * 4 + 1] = fill.g; l.data[i * 4 + 2] = fill.b; l.data[i * 4 + 3] = fill.a === undefined ? 255 : fill.a; }
     return l;
@@ -1211,9 +1217,10 @@
       this.layers.splice(at < 0 ? this.layers.length : at, 0, l);
       this.activeId = l.id; this.editMask = false; return l;
     }
-    addLayerFromData(name, data, label) {
+    addLayerFromData(name, data, label, x, y, w, h) {
       this.checkpoint(label || 'Nueva capa');
-      const l = makeLayer(this.w, this.h, name); l.data = data;
+      const lw = w || this.w, lh = h || this.h;
+      const l = makeLayer(lw, lh, name, null, x, y); l.data = data;
       this.layers.splice(this.indexOf(this.activeId) + 1, 0, l); this.activeId = l.id; this.editMask = false; return l;
     }
     duplicateLayer(id) {
@@ -1245,7 +1252,7 @@
       const top = this.layers[i], bottom = this.layers[i - 1];
       const out = new Uint8ClampedArray(this.w * this.h * 4);
       composite([bottom, top], this.w, this.h, out);
-      const merged = Object.assign({}, bottom, { data: out, mask: null, opacity: 1, mode: 'normal', text: null, id: 'L' + layerSeq++ });
+      const merged = Object.assign({}, bottom, { data: out, mask: null, opacity: 1, mode: 'normal', text: null, x: 0, y: 0, w: this.w, h: this.h, id: 'L' + layerSeq++ });
       this.layers.splice(i - 1, 2, merged); this.activeId = merged.id; return true;
     }
     flatten() {
@@ -1257,27 +1264,59 @@
       this.layers = [l]; this.activeId = l.id; this.editMask = false; return true;
     }
     setSelection(mask, label) { this.checkpoint(label || 'Selección'); this.selection = mask; }
-    mapAllLayers(label, fn, newW, newH) { // fn(data, w, h, channels) -> {data,w,h}
-      this.checkpoint(label);
-      const w = this.w, h = this.h; let nw = w, nh = h;
-      for (const l of this.layers) {
-        const r = fn(l.data, w, h, 4); l.data = r.data; nw = r.w; nh = r.h;
-        if (l.mask) l.mask = fn(l.mask, w, h, 1).data;
-      }
-      if (this.selection) this.selection = normalizeMask(fn(this.selection, w, h, 1).data);
-      this.w = newW || nw; this.h = newH || nh;
-    }
+    /** Scale, flip, rotate and crop every layer inside its own bounds. */
     cropCanvas(x, y, nw, nh) {
-      this.mapAllLayers('Recortar lienzo', (d, w, h, ch) => ({ data: cropData(d, w, h, x, y, nw, nh, ch), w: nw, h: nh }), nw, nh);
+      this.checkpoint('Recortar lienzo');
+      const oldW = this.w, oldH = this.h;
+      for (const l of this.layers) {
+        const x0 = Math.max(x, l.x), y0 = Math.max(y, l.y);
+        const x1 = Math.min(x + nw, l.x + l.w), y1 = Math.min(y + nh, l.y + l.h);
+        if (x1 <= x0 || y1 <= y0) { l.data = new Uint8ClampedArray(4); l.mask = null; l.x = 0; l.y = 0; l.w = 1; l.h = 1; continue; }
+        const cw = x1 - x0, ch = y1 - y0;
+        l.data = cropData(l.data, l.w, l.h, x0 - l.x, y0 - l.y, cw, ch, 4);
+        if (l.mask) l.mask = cropData(l.mask, l.w, l.h, x0 - l.x, y0 - l.y, cw, ch, 1);
+        l.x = x0 - x; l.y = y0 - y; l.w = cw; l.h = ch;
+      }
+      if (this.selection) this.selection = normalizeMask(cropData(this.selection, oldW, oldH, x, y, nw, nh, 1));
+      this.w = nw; this.h = nh;
     }
     scaleImage(nw, nh) {
-      this.mapAllLayers('Escalar imagen', (d, w, h, ch) => ({ data: ch === 4 ? resize(d, w, h, nw, nh) : resizeMask(d, w, h, nw, nh), w: nw, h: nh }), nw, nh);
+      this.checkpoint('Escalar imagen');
+      const sx = nw / this.w, sy = nh / this.h;
+      for (const l of this.layers) {
+        const lw = Math.max(1, Math.round(l.w * sx)), lh = Math.max(1, Math.round(l.h * sy));
+        l.data = resize(l.data, l.w, l.h, lw, lh);
+        if (l.mask) l.mask = resizeMask(l.mask, l.w, l.h, lw, lh);
+        l.x = Math.round(l.x * sx); l.y = Math.round(l.y * sy); l.w = lw; l.h = lh;
+      }
+      if (this.selection) this.selection = normalizeMask(resizeMask(this.selection, this.w, this.h, nw, nh));
+      this.w = nw; this.h = nh;
     }
     flipImage(horizontal) {
-      this.mapAllLayers(horizontal ? 'Voltear horizontal' : 'Voltear vertical', (d, w, h, ch) => ({ data: flipData(d, w, h, horizontal, ch), w, h }));
+      this.checkpoint(horizontal ? 'Voltear horizontal' : 'Voltear vertical');
+      const W = this.w, H = this.h;
+      for (const l of this.layers) {
+        l.data = flipData(l.data, l.w, l.h, horizontal, 4);
+        if (l.mask) l.mask = flipData(l.mask, l.w, l.h, horizontal, 1);
+        if (horizontal) l.x = W - (l.x + l.w); else l.y = H - (l.y + l.h);
+      }
+      if (this.selection) this.selection = normalizeMask(flipData(this.selection, W, H, horizontal, 1));
     }
     rotateImage(quarter) {
-      this.mapAllLayers('Rotar imagen', (d, w, h, ch) => rotate90Data(d, w, h, quarter, ch));
+      this.checkpoint('Rotar imagen');
+      const q = ((quarter % 4) + 4) % 4; if (!q) return;
+      const W = this.w, H = this.h, nw = q % 2 ? H : W, nh = q % 2 ? W : H;
+      for (const l of this.layers) {
+        const ow = l.w, oh = l.h, x = l.x, y = l.y;
+        const r = rotate90Data(l.data, ow, oh, q, 4); l.data = r.data;
+        if (l.mask) l.mask = rotate90Data(l.mask, ow, oh, q, 1).data;
+        l.w = r.w; l.h = r.h;
+        if (q === 1) { l.x = H - (y + oh); l.y = x; }
+        else if (q === 2) { l.x = W - (x + ow); l.y = H - (y + oh); }
+        else { l.x = y; l.y = W - (x + ow); }
+      }
+      if (this.selection) this.selection = normalizeMask(rotate90Data(this.selection, W, H, q, 1).data);
+      this.w = nw; this.h = nh;
     }
   }
 

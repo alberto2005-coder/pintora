@@ -75,14 +75,18 @@
 
   /** Write a document ({w,h,layers:[{name,data,opacity,visible,mode}], composite}) as PSD. */
   function writePsd(doc) {
-    const children = (doc.layers || []).map((l) => ({
-      name: l.name || 'Capa',
-      opacity: l.opacity === undefined ? 1 : l.opacity,
-      hidden: l.visible === false,
-      blendMode: toPsdBlend(l.mode),
-      left: 0, top: 0,
-      imageData: { width: doc.w, height: doc.h, data: new Uint8ClampedArray(l.data) }
-    }));
+    const children = (doc.layers || []).map((l) => {
+      const w = l.w || doc.w, h = l.h || doc.h, data = new Uint8ClampedArray(w * h * 4);
+      data.set(new Uint8ClampedArray(l.data).subarray(0, data.length));
+      return {
+        name: l.name || 'Capa',
+        opacity: l.opacity === undefined ? 1 : l.opacity,
+        hidden: l.visible === false,
+        blendMode: toPsdBlend(l.mode),
+        left: l.x || 0, top: l.y || 0,
+        imageData: { width: w, height: h, data }
+      };
+    });
     const out = { width: doc.w, height: doc.h, children };
     if (doc.composite) out.imageData = { width: doc.w, height: doc.h, data: new Uint8ClampedArray(doc.composite) };
     return psdLib.writePsd(out, { generateThumbnail: false });

@@ -256,11 +256,40 @@ function setColor(which, rgb, fromPicker) {
 }
 function swapColors() { const t = S.fg; S.fg = S.bg; S.bg = t; syncHsvFrom(S[S.colorTarget]); refreshColor(); }
 function defaultColors() { S.fg = { r: 0, g: 0, b: 0 }; S.bg = { r: 255, g: 255, b: 255 }; syncHsvFrom(S[S.colorTarget]); refreshColor(); }
-function ensureCov() {
-  const d = S.doc;
-  if (!S.cov || S.covW !== d.w || S.covH !== d.h) { S.cov = new Float32Array(d.w * d.h); S.covW = d.w; S.covH = d.h; }
+function ensureCov(w, h) {
+  const d = S.doc; w = w || d.w; h = h || d.h;
+  if (!S.cov || S.covW !== w || S.covH !== h) { S.cov = new Float32Array(w * h); S.covW = w; S.covH = h; }
   return S.cov;
 }
+/** The document selection cropped to a layer's own rectangle (null when there is no selection). */
+function layerSel(L) {
+  const d = S.doc, sel = d.selection; if (!sel) return null;
+  const m = new Uint8Array(L.w * L.h);
+  for (let y = 0; y < L.h; y++) for (let x = 0; x < L.w; x++) {
+    const dx = x + L.x, dy = y + L.y;
+    if (dx >= 0 && dy >= 0 && dx < d.w && dy < d.h) m[y * L.w + x] = sel[dy * d.w + dx];
+  }
+  return m;
+}
+/** A layer-sized mask lifted into document coordinates. */
+function layerMaskToDoc(m, L) {
+  const d = S.doc, out = new Uint8Array(d.w * d.h);
+  for (let y = 0; y < L.h; y++) for (let x = 0; x < L.w; x++) {
+    const dx = x + L.x, dy = y + L.y;
+    if (dx >= 0 && dy >= 0 && dx < d.w && dy < d.h) out[dy * d.w + dx] = m[y * L.w + x];
+  }
+  return out;
+}
+/** A document-sized mask cropped to a layer's own rectangle. */
+function maskDocToLayer(m, L) {
+  const d = S.doc, out = new Uint8Array(L.w * L.h);
+  for (let y = 0; y < L.h; y++) for (let x = 0; x < L.w; x++) {
+    const dx = x + L.x, dy = y + L.y;
+    if (dx >= 0 && dy >= 0 && dx < d.w && dy < d.h) out[y * L.w + x] = m[dy * d.w + dx];
+  }
+  return out;
+}
+function layerRect(L) { return { x0: L.x, y0: L.y, x1: L.x + L.w, y1: L.y + L.h }; }
 function clearCov(box) {
   const w = S.covW; if (!box) return;
   for (let y = box.y0; y <= box.y1; y++) S.cov.fill(0, y * w + box.x0, y * w + box.x1 + 1);
@@ -328,17 +357,17 @@ function maskToDataURL(mask, w, h) {
 function projectData() {
   const d = S.doc, layers = [];
   for (const l of d.layers) {
-    const o = { name: l.name, visible: l.visible, opacity: l.opacity, mode: l.mode, lockAlpha: l.lockAlpha, maskOn: l.maskOn, text: l.text };
-    o.png = dataToCanvas(l.data, d.w, d.h).toDataURL('image/png');
+    const o = { name: l.name, visible: l.visible, opacity: l.opacity, mode: l.mode, lockAlpha: l.lockAlpha, maskOn: l.maskOn, text: l.text, x: l.x, y: l.y, w: l.w, h: l.h };
+    o.png = dataToCanvas(l.data, l.w, l.h).toDataURL('image/png');
     if (l.mask) {
-      const m = new Uint8ClampedArray(d.w * d.h * 4);
+      const m = new Uint8ClampedArray(l.w * l.h * 4);
       for (let i = 0; i < l.mask.length; i++) { m[i * 4] = m[i * 4 + 1] = m[i * 4 + 2] = l.mask[i]; m[i * 4 + 3] = 255; }
-      o.mask = dataToCanvas(m, d.w, d.h).toDataURL('image/png');
+      o.mask = dataToCanvas(m, l.w, l.h).toDataURL('image/png');
     }
     layers.push(o);
   }
   return {
-    format: 'pintora', version: 2, w: d.w, h: d.h, active: d.indexOf(d.activeId), name: S.name,
+    format: 'pintora', version: 3, w: d.w, h: d.h, active: d.indexOf(d.activeId), name: S.name,
     fg: { r: S.fg.r, g: S.fg.g, b: S.fg.b }, bg: { r: S.bg.r, g: S.bg.g, b: S.bg.b },
     selection: d.selection ? maskToDataURL(d.selection, d.w, d.h) : null, layers
   };
@@ -358,11 +387,13 @@ async function loadProject(text, name) {
   if (p.w > MAX_DIM || p.h > MAX_DIM) throw new Error('El proyecto supera el tamaño máximo.');
   const doc = new E.Doc(p.w, p.h);
   for (const o of p.layers) {
-    const l = E.makeLayer(p.w, p.h, o.name);
-    const im = await imageFromURL(o.png), c = document.createElement('canvas'); c.width = p.w; c.height = p.h;
-    const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(im, 0, 0); l.data = g.getImageData(0, 0, p.w, p.h).data;
+    const lw = o.w || p.w, lh = o.h || p.h, lx = o.x || 0, ly = o.y || 0;
+    if (!(lw >= 1 && lh >= 1) || lw > MAX_DIM || lh > MAX_DIM) throw new Error('Una capa del proyecto tiene un tamaño no válido.');
+    const l = E.makeLayer(lw, lh, o.name, null, lx, ly);
+    const im = await imageFromURL(o.png), c = document.createElement('canvas'); c.width = lw; c.height = lh;
+    const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(im, 0, 0); l.data = g.getImageData(0, 0, lw, lh).data;
     Object.assign(l, { visible: o.visible !== false, opacity: o.opacity === undefined ? 1 : o.opacity, mode: E.MODES[o.mode] ? o.mode : 'normal', lockAlpha: !!o.lockAlpha, maskOn: o.maskOn !== false, text: o.text || null });
-    if (o.mask) { const mi = await imageFromURL(o.mask); g.clearRect(0, 0, p.w, p.h); g.drawImage(mi, 0, 0); const md = g.getImageData(0, 0, p.w, p.h).data; l.mask = new Uint8Array(p.w * p.h); for (let i = 0; i < l.mask.length; i++) l.mask[i] = md[i * 4]; }
+    if (o.mask) { const mi = await imageFromURL(o.mask); g.clearRect(0, 0, lw, lh); g.drawImage(mi, 0, 0); const md = g.getImageData(0, 0, lw, lh).data; l.mask = new Uint8Array(lw * lh); for (let i = 0; i < l.mask.length; i++) l.mask[i] = md[i * 4]; }
     doc.layers.push(l);
   }
   if (!doc.layers.length) throw new Error('El proyecto no tiene capas');
@@ -461,34 +492,27 @@ function openAsDocument(im, name) {
   doc.layers.push(l); doc.activeId = l.id; setDoc(doc, name.replace(/\.[a-z0-9]+$/i, '')); S.modified = false;
   toast(name + ' · ' + im.w + '×' + im.h + ' px');
 }
-function placeRgba(src, sw, sh, left, top, dw, dh) {
-  const out = new Uint8ClampedArray(dw * dh * 4);
-  for (let y = 0; y < sh; y++) {
-    const ty = y + top;
-    if (ty < 0 || ty >= dh) continue;
-    const x0 = Math.max(0, -left), x1 = Math.min(sw, dw - left);
-    if (x1 <= x0) continue;
-    out.set(src.subarray((y * sw + x0) * 4, (y * sw + x1) * 4), (ty * dw + x0 + left) * 4);
-  }
-  return out;
-}
 async function openPsd(file, asLayers) {
   const psd = PintoraFormats.readPsd(await file.arrayBuffer());
-  if (!psd.w || !psd.h) throw new Error('El PSD no tiene un tamaño válido.');
+  if (!psd.w || !psd.h || psd.w > MAX_DIM || psd.h > MAX_DIM) throw new Error('El PSD no tiene un tamaño válido.');
+  const valid = (l) => l.w >= 1 && l.h >= 1 && l.w <= MAX_DIM && l.h <= MAX_DIM;
   if (asLayers && S.doc) {
-    const d = S.doc;
+    const d = S.doc; let n = 0;
     for (const l of psd.layers) {
-      const L = d.addLayerFromData(l.name, placeRgba(l.data, l.w, l.h, l.left, l.top, d.w, d.h), 'Abrir PSD como capa');
-      L.opacity = l.opacity; L.visible = l.visible; L.mode = l.mode;
+      if (!valid(l)) continue;
+      const L = d.addLayerFromData(l.name, new Uint8ClampedArray(l.data), 'Abrir PSD como capa', l.left || 0, l.top || 0, l.w, l.h);
+      L.opacity = l.opacity; L.visible = l.visible; L.mode = l.mode; n++;
     }
+    if (!n) { toast('El PSD no tiene capas de mapa de bits válidas.'); return; }
     docChanged();
     return;
   }
   if (!(await confirmDiscard())) return;
   const doc = new E.Doc(psd.w, psd.h);
   for (const l of psd.layers) {
-    const L = E.makeLayer(psd.w, psd.h, l.name);
-    L.data = placeRgba(l.data, l.w, l.h, l.left, l.top, psd.w, psd.h);
+    if (!valid(l)) continue;
+    const L = E.makeLayer(l.w, l.h, l.name, null, l.left || 0, l.top || 0);
+    L.data = new Uint8ClampedArray(l.data);
     L.opacity = l.opacity; L.visible = l.visible; L.mode = l.mode;
     doc.layers.push(L);
   }
@@ -517,17 +541,14 @@ async function savePsd() {
   const d = S.doc; flushDirty();
   const buffer = PintoraFormats.writePsd({
     w: d.w, h: d.h, composite: E.flattenOn(d.layers, d.w, d.h),
-    layers: d.layers.map((l) => ({ name: l.name, data: l.data, opacity: l.opacity, visible: l.visible, mode: l.mode }))
+    layers: d.layers.map((l) => ({ name: l.name, data: l.data, opacity: l.opacity, visible: l.visible, mode: l.mode, x: l.x, y: l.y, w: l.w, h: l.h }))
   });
   await saveBlob(baseName() + '.psd', new Blob([buffer], { type: 'image/vnd.adobe.photoshop' }));
 }
 function addImageAsLayer(im, name) {
-  const d = S.doc, data = new Uint8ClampedArray(d.w * d.h * 4), ox = Math.round((d.w - im.w) / 2), oy = Math.round((d.h - im.h) / 2);
-  for (let y = 0; y < im.h; y++) {
-    const ty = y + oy; if (ty < 0 || ty >= d.h) continue;
-    for (let x = 0; x < im.w; x++) { const tx = x + ox; if (tx < 0 || tx >= d.w) continue; const si = (y * im.w + x) * 4, di = (ty * d.w + tx) * 4; data[di] = im.data[si]; data[di + 1] = im.data[si + 1]; data[di + 2] = im.data[si + 2]; data[di + 3] = im.data[si + 3]; }
-  }
-  d.addLayerFromData((name || 'Capa').replace(/\.[a-z0-9]+$/i, ''), data, 'Abrir como capa'); docChanged();
+  const d = S.doc, ox = Math.round((d.w - im.w) / 2), oy = Math.round((d.h - im.h) / 2);
+  d.addLayerFromData((name || 'Capa').replace(/\.[a-z0-9]+$/i, ''), new Uint8ClampedArray(im.data), 'Abrir como capa', ox, oy, im.w, im.h);
+  docChanged();
 }
 function confirmDiscard() {
   return new Promise((res) => {
@@ -577,11 +598,13 @@ async function pasteSmart(forceSystem) {
 }
 function copySelection(cut) {
   const d = S.doc, L = d.active; if (!L) return false;
-  const sel = d.selection, b = sel ? E.maskBounds(sel, d.w, d.h) : { x0: 0, y0: 0, x1: d.w, y1: d.h };
-  if (!b) return false;
+  const sel = d.selection, b0 = sel ? E.maskBounds(sel, d.w, d.h) : { x0: 0, y0: 0, x1: d.w, y1: d.h };
+  if (!b0) return false;
+  const b = { x0: Math.max(b0.x0, L.x), y0: Math.max(b0.y0, L.y), x1: Math.min(b0.x1, L.x + L.w), y1: Math.min(b0.y1, L.y + L.h) };
+  if (b.x1 <= b.x0 || b.y1 <= b.y0) { toast('La selección no toca la capa activa.'); return false; }
   const w = b.x1 - b.x0, hh = b.y1 - b.y0, out = new Uint8ClampedArray(w * hh * 4);
   for (let y = 0; y < hh; y++) for (let x = 0; x < w; x++) {
-    const p = (y + b.y0) * d.w + x + b.x0, si = p * 4, di = (y * w + x) * 4, m = sel ? sel[p] / 255 : 1;
+    const dx = x + b.x0, dy = y + b.y0, p = dy * d.w + dx, si = ((dy - L.y) * L.w + (dx - L.x)) * 4, di = (y * w + x) * 4, m = sel ? sel[p] / 255 : 1;
     out[di] = L.data[si]; out[di + 1] = L.data[si + 1]; out[di + 2] = L.data[si + 2]; out[di + 3] = L.data[si + 3] * m;
   }
   S.clip = { w, h: hh, x: b.x0, y: b.y0, data: out };
@@ -593,15 +616,16 @@ function clearSelection(isCut) {
   const d = S.doc, L = d.active; if (!L) return;
   if (L.lockAlpha && !isCut) { toast('La transparencia de esta capa está bloqueada.'); return; }
   d.beginOp(isCut ? 'Cortar' : 'Borrar', L, 'data'); const sel = d.selection;
-  for (let p = 0; p < d.w * d.h; p++) { const m = sel ? sel[p] : 255; if (m) L.data[p * 4 + 3] = L.data[p * 4 + 3] * (255 - m) / 255; }
+  for (let y = 0; y < L.h; y++) for (let x = 0; x < L.w; x++) {
+    const dx = x + L.x, dy = y + L.y, p = dy * d.w + dx;
+    if (dx < 0 || dy < 0 || dx >= d.w || dy >= d.h) continue;
+    const m = sel ? sel[p] : 255; if (m) { const i = (y * L.w + x) * 4; L.data[i + 3] = L.data[i + 3] * (255 - m) / 255; }
+  }
   docChanged();
 }
 function pasteClip(clip, asNew) {
   const d = S.doc; clip = clip || S.clip; if (!clip) { toast('El portapapeles está vacío.'); return; }
-  const data = new Uint8ClampedArray(d.w * d.h * 4);
-  const ox = clip.x, oy = clip.y;
-  for (let y = 0; y < clip.h; y++) { const ty = y + oy; if (ty < 0 || ty >= d.h) continue; for (let x = 0; x < clip.w; x++) { const tx = x + ox; if (tx < 0 || tx >= d.w) continue; const si = (y * clip.w + x) * 4, di = (ty * d.w + tx) * 4; data[di] = clip.data[si]; data[di + 1] = clip.data[si + 1]; data[di + 2] = clip.data[si + 2]; data[di + 3] = clip.data[si + 3]; } }
-  d.addLayerFromData('Pegado', data, 'Pegar'); docChanged(); void asNew;
+  d.addLayerFromData('Pegado', new Uint8ClampedArray(clip.data), 'Pegar', clip.x, clip.y, clip.w, clip.h); docChanged(); void asNew;
 }
 document.addEventListener('paste', async (e) => {
   if (e.target && /input|textarea/i.test(e.target.tagName)) return;

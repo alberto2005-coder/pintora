@@ -141,9 +141,10 @@ function refreshLayers() {
     const eye = h('button', { class: 'iconbtn eye', title: L.visible ? 'Ocultar capa' : 'Mostrar capa', 'aria-label': L.visible ? 'Ocultar capa' : 'Mostrar capa', onclick: (e) => { e.stopPropagation(); d.checkpoint('Visibilidad de capa'); L.visible = !L.visible; docChanged(); } }, icon(L.visible ? 'eye' : 'eyeoff'));
     const nameEl = h('div', { class: 'name', title: L.name, text: L.name });
     nameEl.addEventListener('dblclick', (e) => { e.stopPropagation(); const inp = h('input', { type: 'text', value: L.name, 'aria-label': 'Nombre de capa' }); nameEl.textContent = ''; nameEl.append(inp); inp.focus(); inp.select(); const fin = (ok) => { if (ok && inp.value.trim() && inp.value !== L.name) { d.checkpoint('Renombrar capa'); L.name = inp.value.trim(); } refreshLayers(); refreshHistory(); }; inp.addEventListener('keydown', (ev) => { ev.stopPropagation(); if (ev.key === 'Enter') fin(true); else if (ev.key === 'Escape') fin(false); }); inp.addEventListener('blur', () => fin(true)); });
-    const meta = h('div', { class: 'meta', text: (L.mode !== 'normal' ? E.MODES[L.mode].label + ' · ' : '') + Math.round(L.opacity * 100) + '%' + (L.lockAlpha ? ' · 🔒' : '') });
-    const row = h('div', { class: 'lrow' + (sel ? ' sel' : ''), role: 'button', tabindex: 0, 'aria-label': 'Capa ' + L.name }, eye, thumbCanvas(L.data, d.w, d.h, false));
-    if (L.mask) { const mc = thumbCanvas(L.mask, d.w, d.h, true); mc.className = 'mask' + (sel && d.editMask ? ' edit' : ''); mc.title = 'Máscara de capa (clic para editarla)'; mc.style.opacity = L.maskOn === false ? 0.4 : 1; mc.addEventListener('click', (e) => { e.stopPropagation(); d.activeId = L.id; d.editMask = true; refreshLayers(); }); row.append(mc); }
+    const ownBounds = L.x || L.y || L.w !== d.w || L.h !== d.h;
+    const meta = h('div', { class: 'meta', text: (L.mode !== 'normal' ? E.MODES[L.mode].label + ' · ' : '') + Math.round(L.opacity * 100) + '%' + (L.lockAlpha ? ' · 🔒' : '') + (ownBounds ? ' · ' + L.w + '×' + L.h + ' @ ' + L.x + ',' + L.y : '') });
+    const row = h('div', { class: 'lrow' + (sel ? ' sel' : ''), role: 'button', tabindex: 0, 'aria-label': 'Capa ' + L.name }, eye, thumbCanvas(L.data, L.w, L.h, false));
+    if (L.mask) { const mc = thumbCanvas(L.mask, L.w, L.h, true); mc.className = 'mask' + (sel && d.editMask ? ' edit' : ''); mc.title = 'Máscara de capa (clic para editarla)'; mc.style.opacity = L.maskOn === false ? 0.4 : 1; mc.addEventListener('click', (e) => { e.stopPropagation(); d.activeId = L.id; d.editMask = true; refreshLayers(); }); row.append(mc); }
     row.append(h('div', { style: 'flex:1;min-width:0' }, nameEl, meta));
     row.addEventListener('click', () => { d.activeId = L.id; d.editMask = false; refreshLayers(); });
     row.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { d.activeId = L.id; d.editMask = false; refreshLayers(); } });
@@ -288,7 +289,7 @@ function curvesDialog(preset) {
   };
   const preview = () => {
     clearTimeout(timer);
-    timer = setTimeout(() => { S.preview = { id: L.id, data: E.applyFilter('curves', base, d.w, d.h, { points: curves }, d.selection) }; invalidate(null); }, 60);
+    timer = setTimeout(() => { S.preview = { id: L.id, data: E.applyFilter('curves', base, L.w, L.h, { points: curves }, layerSel(L)) }; invalidate(layerRect(L)); }, 60);
   };
   const at = (ev) => {
     const r = canvas.getBoundingClientRect();
@@ -321,7 +322,7 @@ function curvesDialog(preset) {
       clearTimeout(timer); S.preview = null;
       const points = { rgb: curves.rgb.map((q) => q.slice()), r: curves.r.map((q) => q.slice()), g: curves.g.map((q) => q.slice()), b: curves.b.map((q) => q.slice()) };
       d.checkpoint('Curvas');
-      L.data = E.applyFilter('curves', base, d.w, d.h, { points }, d.selection);
+      L.data = E.applyFilter('curves', base, L.w, L.h, { points }, layerSel(L));
       S.lastFilter = { id: 'curves', vals: { points, channel: v.channel || 'rgb' } };
       docChanged();
     },
@@ -334,15 +335,15 @@ function runFilter(id, preset) {
     if (!preset) { curvesDialog(); return; }
     const LC = needLayer(); if (!LC) return;
     const dC = S.doc; dC.checkpoint('Curvas');
-    LC.data = E.applyFilter('curves', LC.data, dC.w, dC.h, preset, dC.selection);
+    LC.data = E.applyFilter('curves', LC.data, LC.w, LC.h, preset, layerSel(LC));
     docChanged(); return;
   }
   const L = needLayer(); if (!L) return; const f = E.FILTERS[id], d = S.doc, base = L.data;
-  const commit = (vals) => { d.checkpoint(f.name); L.data = E.applyFilter(id, base, d.w, d.h, vals, d.selection); S.lastFilter = { id, vals }; docChanged(); };
+  const commit = (vals) => { d.checkpoint(f.name); L.data = E.applyFilter(id, base, L.w, L.h, vals, layerSel(L)); S.lastFilter = { id, vals }; docChanged(); };
   if (preset) { commit(preset); return; }
   if (!f.params.length) { commit({}); return; }
   let timer = 0; const fields = f.params.map((p) => ({ id: p.id, label: p.label, type: p.type === 'select' ? 'select' : p.type === 'check' ? 'check' : p.type === 'color' ? 'color' : 'range', min: p.min, max: p.max, step: p.step, options: p.options, value: p.def }));
-  const preview = (vals) => { clearTimeout(timer); timer = setTimeout(() => { S.preview = { id: L.id, data: E.applyFilter(id, base, d.w, d.h, vals, d.selection) }; invalidate(null); }, 70); };
+  const preview = (vals) => { clearTimeout(timer); timer = setTimeout(() => { S.preview = { id: L.id, data: E.applyFilter(id, base, L.w, L.h, vals, layerSel(L)) }; invalidate(layerRect(L)); }, 70); };
   dialog({ title: f.name, fields, ok: 'Aplicar', onInput: (v) => preview(Object.assign({}, v)), onOk: (v) => { clearTimeout(timer); S.preview = null; commit(Object.assign({}, v)); }, onCancel: () => { clearTimeout(timer); S.preview = null; invalidate(null); } });
 }
 function openTextDialog(pos, existing) {
@@ -377,35 +378,35 @@ const A = {
   flatten() { if (S.doc.flatten()) docChanged(); },
   addMask(kind) {
     const L = activeLayer(); if (!L) return; const d = S.doc; if (L.mask) { toast('La capa ya tiene máscara.'); return; }
-    d.checkpoint('Añadir máscara'); const m = new Uint8Array(d.w * d.h);
-    if (kind === 'white') m.fill(255); else if (kind === 'sel') { if (d.selection) m.set(d.selection); else m.fill(255); } else if (kind === 'alpha') for (let i = 0; i < m.length; i++) m[i] = L.data[i * 4 + 3];
+    d.checkpoint('Añadir máscara'); const m = new Uint8Array(L.w * L.h);
+    if (kind === 'white') m.fill(255); else if (kind === 'sel') { const ls = layerSel(L); if (ls) m.set(ls); else m.fill(255); } else if (kind === 'alpha') for (let i = 0; i < m.length; i++) m[i] = L.data[i * 4 + 3];
     L.mask = m; L.maskOn = true; d.editMask = true; docChanged();
   },
   applyMask() { const L = activeLayer(); if (!L || !L.mask) { toast('La capa no tiene máscara.'); return; } const d = S.doc; d.checkpoint('Aplicar máscara'); const nd = new Uint8ClampedArray(L.data); for (let i = 0; i < L.mask.length; i++) nd[i * 4 + 3] = nd[i * 4 + 3] * L.mask[i] / 255; L.data = nd; L.mask = null; d.editMask = false; docChanged(); },
   delMask() { const L = activeLayer(); if (!L || !L.mask) return; S.doc.checkpoint('Eliminar máscara'); L.mask = null; S.doc.editMask = false; docChanged(); },
   toggleMask() { const L = activeLayer(); if (!L || !L.mask) return; S.doc.checkpoint('Mostrar/ocultar máscara'); L.maskOn = L.maskOn === false; docChanged(); },
   invertMask() { const L = activeLayer(); if (!L || !L.mask) return; S.doc.checkpoint('Invertir máscara'); const m = new Uint8Array(L.mask.length); for (let i = 0; i < m.length; i++) m[i] = 255 - L.mask[i]; L.mask = m; docChanged(); },
-  layerFlip(horizontal) { const L = needLayer(); if (!L) return; const d = S.doc; d.checkpoint(horizontal ? 'Voltear capa horizontal' : 'Voltear capa vertical'); L.data = E.flipData(L.data, d.w, d.h, horizontal, 4); if (L.mask) L.mask = E.flipData(L.mask, d.w, d.h, horizontal, 1); docChanged(); },
+  layerFlip(horizontal) { const L = needLayer(); if (!L) return; const d = S.doc; d.checkpoint(horizontal ? 'Voltear capa horizontal' : 'Voltear capa vertical'); L.data = E.flipData(L.data, L.w, L.h, horizontal, 4); if (L.mask) L.mask = E.flipData(L.mask, L.w, L.h, horizontal, 1); docChanged(); },
   layerTransformDialog() {
     const L = needLayer(); if (!L) return; const d = S.doc, base = L.data; let timer = 0;
-    const calc = (v) => E.transformData(base, d.w, d.h, v.angle * Math.PI / 180, v.scale / 100, d.w / 2, d.h / 2, v.tx, v.ty);
-    dialog({ title: 'Girar y escalar capa', fields: [{ id: 'angle', label: 'Ángulo (°)', type: 'range', min: -180, max: 180, step: 0.5, value: 0 }, { id: 'scale', label: 'Escala (%)', type: 'range', min: 5, max: 400, value: 100 }, { id: 'tx', label: 'Desplazar X', type: 'range', min: -d.w, max: d.w, value: 0 }, { id: 'ty', label: 'Desplazar Y', type: 'range', min: -d.h, max: d.h, value: 0 }], ok: 'Aplicar',
-      onInput: (v) => { clearTimeout(timer); timer = setTimeout(() => { S.preview = { id: L.id, data: calc(v) }; invalidate(null); }, 60); }, onOk: (v) => { clearTimeout(timer); S.preview = null; d.checkpoint('Transformar capa'); L.data = calc(v); docChanged(); }, onCancel: () => { clearTimeout(timer); S.preview = null; invalidate(null); } });
+    const calc = (v) => E.transformData(base, L.w, L.h, v.angle * Math.PI / 180, v.scale / 100, L.w / 2, L.h / 2, v.tx, v.ty);
+    dialog({ title: 'Girar y escalar capa', fields: [{ id: 'angle', label: 'Ángulo (°)', type: 'range', min: -180, max: 180, step: 0.5, value: 0 }, { id: 'scale', label: 'Escala (%)', type: 'range', min: 5, max: 400, value: 100 }, { id: 'tx', label: 'Desplazar X', type: 'range', min: -L.w, max: L.w, value: 0 }, { id: 'ty', label: 'Desplazar Y', type: 'range', min: -L.h, max: L.h, value: 0 }], ok: 'Aplicar',
+      onInput: (v) => { clearTimeout(timer); timer = setTimeout(() => { S.preview = { id: L.id, data: calc(v) }; invalidate(layerRect(L)); }, 60); }, onOk: (v) => { clearTimeout(timer); S.preview = null; d.checkpoint('Transformar capa'); L.data = calc(v); docChanged(); }, onCancel: () => { clearTimeout(timer); S.preview = null; invalidate(null); } });
   },
   layerOffsetDialog() {
     const L = needLayer(); if (!L) return; const d = S.doc;
-    dialog({ title: 'Desplazar capa', fields: [{ id: 'x', label: 'X (px)', type: 'number', value: 0 }, { id: 'y', label: 'Y (px)', type: 'number', value: 0 }, { id: 'wrap', label: 'Repetir los bordes', type: 'check', value: true }], ok: 'Aplicar', onOk: (v) => { d.checkpoint('Desplazar capa'); L.data = E.offsetData(L.data, d.w, d.h, Math.round(v.x), Math.round(v.y), v.wrap, 4); docChanged(); } });
+    dialog({ title: 'Posición de la capa', fields: [{ id: 'x', label: 'X (px)', type: 'number', value: L.x }, { id: 'y', label: 'Y (px)', type: 'number', value: L.y }], ok: 'Aplicar', onOk: (v) => { d.checkpoint('Mover capa'); L.x = Math.round(v.x); L.y = Math.round(v.y); docChanged(); } });
   },
   editText() { const L = activeLayer(); if (!L || !L.text) { toast('La capa activa no es de texto.'); return; } openTextDialog(null, L); },
-  fill(which) { const L = needLayer(); if (!L) return; const d = S.doc; d.beginOp('Rellenar con ' + (which === 'fg' ? 'color de frente' : 'color de fondo'), L, 'data'); E.fillMask(L.data, d.w, d.h, null, d.selection, which === 'fg' ? S.fg : S.bg, 1, L.lockAlpha); docChanged(); },
+  fill(which) { const L = needLayer(); if (!L) return; const d = S.doc; d.beginOp('Rellenar con ' + (which === 'fg' ? 'color de frente' : 'color de fondo'), L, 'data'); E.fillMask(L.data, L.w, L.h, null, layerSel(L), which === 'fg' ? S.fg : S.bg, 1, L.lockAlpha); docChanged(); },
   strokeSel() {
     const d = S.doc; if (!d.selection) { toast('No hay selección.'); return; } const L = needLayer(); if (!L) return;
-    amountDialog('Trazar selección', 'Grosor (px)', 4, 100, (n) => { const outer = E.growMask(d.selection, d.w, d.h, n / 2), inner = E.shrinkMask(d.selection, d.w, d.h, n / 2) || new Uint8Array(d.w * d.h), ring = new Uint8Array(d.w * d.h); if (!outer) return; for (let i = 0; i < ring.length; i++) ring[i] = Math.max(0, outer[i] - inner[i]); d.beginOp('Trazar selección', L, 'data'); E.fillMask(L.data, d.w, d.h, ring, null, S.fg, 1, L.lockAlpha); docChanged(); });
+    amountDialog('Trazar selección', 'Grosor (px)', 4, 100, (n) => { const outer = E.growMask(d.selection, d.w, d.h, n / 2), inner = E.shrinkMask(d.selection, d.w, d.h, n / 2) || new Uint8Array(d.w * d.h), ring = new Uint8Array(d.w * d.h); if (!outer) return; for (let i = 0; i < ring.length; i++) ring[i] = Math.max(0, outer[i] - inner[i]); const local = maskDocToLayer(ring, L); d.beginOp('Trazar selección', L, 'data'); E.fillMask(L.data, L.w, L.h, local, null, S.fg, 1, L.lockAlpha); docChanged(); });
   },
   selAll() { const d = S.doc; d.setSelection(E.rectMask(d.w, d.h, 0, 0, d.w, d.h), 'Seleccionar todo'); S.modified = true; refreshAll(); schedule(); },
   selNone() { const d = S.doc; if (!d.selection) return; d.setSelection(null, 'Quitar selección'); refreshAll(); schedule(); },
   selInvert() { const d = S.doc; d.setSelection(E.invertMask(d.selection, d.w, d.h), 'Invertir selección'); S.modified = true; refreshAll(); schedule(); },
-  selAlpha() { const L = activeLayer(); if (!L) return; const d = S.doc, m = new Uint8Array(d.w * d.h); for (let i = 0; i < m.length; i++) m[i] = L.data[i * 4 + 3]; d.setSelection(E.normalizeMask(m), 'Alfa a selección'); refreshAll(); schedule(); },
+  selAlpha() { const L = activeLayer(); if (!L) return; const d = S.doc, m = new Uint8Array(d.w * d.h); for (let y = 0; y < L.h; y++) for (let x = 0; x < L.w; x++) { const dx = x + L.x, dy = y + L.y; if (dx >= 0 && dy >= 0 && dx < d.w && dy < d.h) m[dy * d.w + dx] = L.data[(y * L.w + x) * 4 + 3]; } d.setSelection(E.normalizeMask(m), 'Alfa a selección'); refreshAll(); schedule(); },
   cropToSel() { const d = S.doc; const b = d.selection ? E.maskBounds(d.selection, d.w, d.h) : null; if (!b) { toast('No hay selección.'); return; } cancelActive(); d.cropCanvas(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0); docChanged(); fitView(); },
   rotate(q) { cancelActive(); S.doc.rotateImage(q); docChanged(); fitView(); },
   flip(hz) { cancelActive(); S.doc.flipImage(hz); docChanged(); },

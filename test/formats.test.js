@@ -60,11 +60,13 @@ test('GIF round trip keeps frames and size', () => {
   assert.ok(gif.data[0] > 200 && gif.data[1] < 60 && gif.data[2] < 60, 'first frame is red');
 });
 
-test('PSD layer rectangles keep their offset', () => {
+test('PSD layer rectangles keep their offset and size', () => {
   const layer = new Uint8ClampedArray([1, 2, 3, 255]);
-  const buf = F.writePsd({ w: 4, h: 4, layers: [{ name: 'Pequeña', data: layer, opacity: 1, visible: true, mode: 'normal' }] });
+  const buf = F.writePsd({ w: 4, h: 4, layers: [{ name: 'Pequeña', data: layer, opacity: 1, visible: true, mode: 'normal', x: 2, y: 1, w: 1, h: 1 }] });
   const psd = F.readPsd(buf);
-  assert.equal(psd.layers[0].w, 4);
-  assert.equal(psd.layers[0].h, 4);
+  assert.equal(psd.layers[0].w, 1);
+  assert.equal(psd.layers[0].h, 1);
+  assert.equal(psd.layers[0].left, 2);
+  assert.equal(psd.layers[0].top, 1);
   assert.deepEqual(Array.from(psd.layers[0].data.slice(0, 4)), [1, 2, 3, 255]);
 });

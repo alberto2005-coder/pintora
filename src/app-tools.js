@@ -136,9 +136,16 @@ function makeColorSelect(contiguous) {
   return {
     cursor: 'crosshair',
     down(ev) {
-      const d = S.doc, L = d.active; if (!L || !insideDoc(ev.x, ev.y)) return;
-      let src = L.data; if (S.opts.sampleMerged) { flushNow(); src = S.flat; }
-      const mask = E.floodMask(src, d.w, d.h, ev.x, ev.y, S.opts.threshold, contiguous);
+      const d = S.doc, L = d.active; if (!L) return;
+      let mask;
+      if (S.opts.sampleMerged) {
+        if (!insideDoc(ev.x, ev.y)) return; flushNow();
+        mask = E.floodMask(S.flat, d.w, d.h, ev.x, ev.y, S.opts.threshold, contiguous);
+      } else {
+        const lx = Math.floor(ev.x - L.x), ly = Math.floor(ev.y - L.y);
+        if (lx < 0 || ly < 0 || lx >= L.w || ly >= L.h) return;
+        mask = layerMaskToDoc(E.floodMask(L.data, L.w, L.h, lx, ly, S.opts.threshold, contiguous), L);
+      }
       commitSel(mask, contiguous ? 'Varita mágica' : 'Selección por color', selModeFrom(ev));
     }
   };
@@ -163,10 +170,10 @@ function moveContent(orig, sel, w, hh, dx, dy) {
 function makeMove() {
   let st = null;
   const apply = () => {
-    const d = S.doc, L = st.L, w = d.w, hh = d.h;
-    if (st.tgt === 'layer') { L.data = E.offsetData(st.odata, w, hh, st.dx, st.dy, false); if (st.omask) L.mask = E.offsetData(st.omask, w, hh, st.dx, st.dy, false, 1); }
-    else if (st.tgt === 'sel') d.selection = E.offsetData(st.osel, w, hh, st.dx, st.dy, false, 1);
-    else { L.data = moveContent(st.odata, st.osel, w, hh, st.dx, st.dy); d.selection = E.offsetData(st.osel, w, hh, st.dx, st.dy, false, 1); }
+    const d = S.doc, L = st.L;
+    if (st.tgt === 'layer') { L.x = st.ox + st.dx; L.y = st.oy + st.dy; }
+    else if (st.tgt === 'sel') d.selection = E.offsetData(st.osel, d.w, d.h, st.dx, st.dy, false, 1);
+    else { L.data = moveContent(st.odata, maskDocToLayer(st.osel, L), L.w, L.h, st.dx, st.dy); d.selection = E.offsetData(st.osel, d.w, d.h, st.dx, st.dy, false, 1); }
     invalidate(null);
   };
   return {
@@ -175,7 +182,7 @@ function makeMove() {
       const d = S.doc, L = d.active; if (!L) return; const tgt = S.opts.moveTarget;
       if ((tgt === 'sel' || tgt === 'content') && !d.selection) { toast('Haz primero una selección.'); return; }
       d.checkpoint(tgt === 'sel' ? 'Mover selección' : tgt === 'content' ? 'Mover contenido' : 'Mover capa');
-      st = { L, tgt, sx: ev.x, sy: ev.y, dx: 0, dy: 0, odata: L.data, omask: L.mask, osel: d.selection };
+      st = { L, tgt, sx: ev.x, sy: ev.y, dx: 0, dy: 0, ox: L.x, oy: L.y, odata: L.data, omask: L.mask, osel: d.selection };
     },
     move(ev) {
       if (!st) return; let dx = Math.round(ev.x - st.sx), dy = Math.round(ev.y - st.sy);
@@ -187,7 +194,7 @@ function makeMove() {
       if (!s.dx && !s.dy) { S.doc.undoStack.pop(); return; }
       docChanged();
     },
-    cancel() { if (!st) return; const s = st; st = null; s.L.data = s.odata; s.L.mask = s.omask; S.doc.selection = s.osel; S.doc.undoStack.pop(); invalidate(null); refreshAll(); }
+    cancel() { if (!st) return; const s = st; st = null; s.L.x = s.ox; s.L.y = s.oy; s.L.data = s.odata; s.L.mask = s.omask; S.doc.selection = s.osel; S.doc.undoStack.pop(); invalidate(null); refreshAll(); }
   };
 }
 
@@ -256,11 +263,11 @@ function makePaint(kind) {
   let st = null;
   const label = { pencil: 'Lápiz', paintbrush: 'Pincel', eraser: 'Borrador', airbrush: 'Aerógrafo', clone: 'Clonar', dodgeburn: 'Sobreexponer/subexponer', blur: 'Desenfocar/enfocar', smudge: 'Manchar' }[kind];
   function applyBox(box) {
-    const d = S.doc, o = S.opts, L = st.L, w = d.w, sel = d.selection;
+    const o = S.opts, L = st.L, w = L.w, hh = L.h, sel = st.sel;
     if (st.target === 'mask') {
       const v = kind === 'eraser' ? 0 : Math.round(lum(S.fg)); E.applyCoverageMask(L.mask, st.orig.mask, w, st.cov, box, sel, v, o.opacity);
     } else if (kind === 'clone') {
-      E.applyClone(L.data, st.orig.data, st.orig.data, w, d.h, st.cov, box, sel, st.off.dx, st.off.dy, o.opacity, L.lockAlpha);
+      E.applyClone(L.data, st.orig.data, st.orig.data, w, hh, st.cov, box, sel, st.off.dx, st.off.dy, o.opacity, L.lockAlpha);
     } else if (kind === 'dodgeburn') {
       for (let y = box.y0; y <= box.y1; y++) L.data.set(st.orig.data.subarray((y * w + box.x0) * 4, (y * w + box.x1 + 1) * 4), (y * w + box.x0) * 4);
       E.applyDodgeBurn(L.data, w, box, st.cov, sel, (o.dbMode === 'burn') !== st.ctrl, o.exposure, o.dbRange);
@@ -268,24 +275,24 @@ function makePaint(kind) {
       for (let y = box.y0; y <= box.y1; y++) L.data.set(st.orig.data.subarray((y * w + box.x0) * 4, (y * w + box.x1 + 1) * 4), (y * w + box.x0) * 4);
       E.applyConvolve(L.data, st.orig.data, st.blurred, w, box, st.cov, sel, o.strength * o.opacity, o.blurMode === 'sharpen');
     } else if (kind === 'smudge') {
-      E.applyClone(L.data, L.data, L.data, w, d.h, st.cov, box, sel, st.smOff[0], st.smOff[1], o.opacity * o.strength, L.lockAlpha);
+      E.applyClone(L.data, L.data, L.data, w, hh, st.cov, box, sel, st.smOff[0], st.smOff[1], o.opacity * o.strength, L.lockAlpha);
     } else {
       E.applyCoverage(L.data, st.orig.data, w, st.cov, box, sel, S.fg, o.opacity, { erase: kind === 'eraser', lockAlpha: L.lockAlpha && kind !== 'eraser' });
     }
-    invalidate(boxToRect(box));
+    invalidate(boxToRect({ x0: box.x0 + L.x, y0: box.y0 + L.y, x1: box.x1 + L.x, y1: box.y1 + L.y }));
   }
   function stamp(x, y) {
-    const d = S.doc, o = S.opts, pen = st.pen && o.dyn;
+    const o = S.opts, L = st.L, pen = st.pen && o.dyn;
     let size = o.size * (pen ? clamp(st.pressure * 1.6, 0.12, 1) : 1); if (kind === 'pencil') size = Math.max(1, Math.round(size));
     const prev = st.prev || [x, y]; st.prev = [x, y];
     if (kind === 'smudge') st.smOff = [prev[0] - x, prev[1] - y];
-    const box = E.stampDab(st.cov, d.w, d.h, x, y, size, kind === 'pencil' ? 1 : o.hardness, kind !== 'pencil', kind === 'airbrush' ? o.flow : 1, kind === 'airbrush');
-    st.box = unionBox(st.box, box); applyBox(box);
+    const box = E.stampDab(st.cov, L.w, L.h, x - L.x, y - L.y, size, kind === 'pencil' ? 1 : o.hardness, kind !== 'pencil', kind === 'airbrush' ? o.flow : 1, kind === 'airbrush');
+    st.box = unionBox(st.box, box); st.docBox = unionBox(st.docBox, { x0: box.x0 + L.x, y0: box.y0 + L.y, x1: box.x1 + L.x, y1: box.y1 + L.y }); applyBox(box);
   }
   function finish(commit) {
     const s = st; if (!s) return; st = null; clearInterval(s.timer);
     if (!commit) { abortOp(s.L, s.orig); clearCov(s.box); invalidate(null); refreshAll(); return; }
-    clearCov(s.box); docChanged(s.box ? boxToRect(s.box) : null);
+    clearCov(s.box); docChanged(s.docBox ? boxToRect(s.docBox) : null);
   }
   return {
     brushCursor: true, cursor: 'none',
@@ -297,8 +304,8 @@ function makePaint(kind) {
       if (target === 'mask' && !L.mask) { toast('Esta capa no tiene máscara.'); return; }
       if (target === 'mask' && (kind === 'blur' || kind === 'smudge')) { toast('Estas herramientas solo pintan en la capa, no en la máscara.'); return; }
       const orig = d.beginOp(label, L, target);
-      st = { L, target, orig, cov: ensureCov(), box: null, last: [ev.x, ev.y], prev: [ev.x, ev.y], pressure: ev.pressure, pen: ev.pointerType === 'pen', ctrl: ev.ctrl, timer: 0, smOff: [0, 0], off: kind === 'clone' ? { dx: S.cloneSrc.x - ev.x, dy: S.cloneSrc.y - ev.y } : null };
-      if (kind === 'blur') st.blurred = E.applyFilter('gaussian_blur', st.orig.data, d.w, d.h, { radius: S.opts.blurRadius });
+      st = { L, target, orig, cov: ensureCov(L.w, L.h), sel: layerSel(L), box: null, docBox: null, last: [ev.x, ev.y], prev: [ev.x, ev.y], pressure: ev.pressure, pen: ev.pointerType === 'pen', ctrl: ev.ctrl, timer: 0, smOff: [0, 0], off: kind === 'clone' ? { dx: S.cloneSrc.x - ev.x, dy: S.cloneSrc.y - ev.y } : null };
+      if (kind === 'blur') st.blurred = E.applyFilter('gaussian_blur', st.orig.data, L.w, L.h, { radius: S.opts.blurRadius });
       const spacing = kind === 'pencil' ? 1 : Math.max(1, S.opts.size * S.opts.spacing);
       st.stroker = new E.Stroker(spacing, stamp); st.stroker.begin(ev.x, ev.y);
       if (kind === 'airbrush') st.timer = setInterval(() => { if (st) stamp(st.last[0], st.last[1]); }, 60);
@@ -323,15 +330,20 @@ function makeBucket() {
       if (d.editMask && !L.mask) { toast('Esta capa no tiene máscara.'); return; }
       let mask = null;
       if (o.fillMode === 'similar') {
-        if (!insideDoc(ev.x, ev.y)) return;
-        let src = L.data; if (o.sampleMerged) { flushNow(); src = S.flat; }
-        mask = E.floodMask(src, d.w, d.h, ev.x, ev.y, o.threshold, true);
+        if (o.sampleMerged) {
+          if (!insideDoc(ev.x, ev.y)) return;
+          flushNow(); mask = maskDocToLayer(E.floodMask(S.flat, d.w, d.h, ev.x, ev.y, o.threshold, true), L);
+        } else {
+          const lx = Math.floor(ev.x - L.x), ly = Math.floor(ev.y - L.y);
+          if (lx < 0 || ly < 0 || lx >= L.w || ly >= L.h) return;
+          mask = E.floodMask(L.data, L.w, L.h, lx, ly, o.threshold, true);
+        }
       }
-      const col = ev.ctrl ? S.bg : S.fg;
+      const col = ev.ctrl ? S.bg : S.fg, sel = layerSel(L);
       if (d.editMask) {
-        const orig = d.beginOp('Relleno de máscara', L, 'mask'), v = lum(col), sel = d.selection;
-        for (let p = 0; p < d.w * d.h; p++) { const a = (mask ? mask[p] / 255 : 1) * o.opacity * (sel ? sel[p] / 255 : 1); if (a) L.mask[p] = Math.round(orig.mask[p] + (v - orig.mask[p]) * a); }
-      } else { d.beginOp('Relleno', L, 'data'); E.fillMask(L.data, d.w, d.h, mask, d.selection, col, o.opacity, L.lockAlpha); }
+        const orig = d.beginOp('Relleno de máscara', L, 'mask'), v = lum(col);
+        for (let p = 0; p < L.mask.length; p++) { const a = (mask ? mask[p] / 255 : 1) * o.opacity * (sel ? sel[p] / 255 : 1); if (a) L.mask[p] = Math.round(orig.mask[p] + (v - orig.mask[p]) * a); }
+      } else { d.beginOp('Relleno', L, 'data'); E.fillMask(L.data, L.w, L.h, mask, sel, col, o.opacity, L.lockAlpha); }
       docChanged();
     }
   };
@@ -341,20 +353,21 @@ function makeBucket() {
 function makeGradient() {
   let st = null;
   const render = () => {
-    const d = S.doc, o = S.opts, L = st.L;
+    const o = S.opts, L = st.L, sel = layerSel(L);
     const c0 = Object.assign({ a: 1 }, S.fg), c1 = o.gradColors === 'fgtr' ? Object.assign({ a: 0 }, S.fg) : Object.assign({ a: 1 }, S.bg);
+    const x0 = st.x0 - L.x, y0 = st.y0 - L.y, x1 = st.x1 - L.x, y1 = st.y1 - L.y;
     if (st.target === 'mask') {
-      const tmp = new Uint8ClampedArray(d.w * d.h * 4); for (let p = 0; p < d.w * d.h; p++) { const v = st.orig.mask[p]; tmp[p * 4] = tmp[p * 4 + 1] = tmp[p * 4 + 2] = v; tmp[p * 4 + 3] = 255; }
+      const tmp = new Uint8ClampedArray(L.w * L.h * 4); for (let p = 0; p < L.w * L.h; p++) { const v = st.orig.mask[p]; tmp[p * 4] = tmp[p * 4 + 1] = tmp[p * 4 + 2] = v; tmp[p * 4 + 3] = 255; }
       const g0 = { r: lum(c0), g: lum(c0), b: lum(c0), a: 1 }, g1 = { r: lum(c1), g: lum(c1), b: lum(c1), a: c1.a };
-      E.fillGradient(tmp, d.w, d.h, d.selection, st.x0, st.y0, st.x1, st.y1, o.gradShape, g0, g1, o.opacity);
-      const m = new Uint8Array(d.w * d.h); for (let p = 0; p < m.length; p++) m[p] = tmp[p * 4]; L.mask = m;
+      E.fillGradient(tmp, L.w, L.h, sel, x0, y0, x1, y1, o.gradShape, g0, g1, o.opacity);
+      const m = new Uint8Array(L.w * L.h); for (let p = 0; p < m.length; p++) m[p] = tmp[p * 4]; L.mask = m;
     } else {
       const buf = new Uint8ClampedArray(st.orig.data);
-      E.fillGradient(buf, d.w, d.h, d.selection, st.x0, st.y0, st.x1, st.y1, o.gradShape, c0, c1, o.opacity);
+      E.fillGradient(buf, L.w, L.h, sel, x0, y0, x1, y1, o.gradShape, c0, c1, o.opacity);
       if (L.lockAlpha) for (let i = 3; i < buf.length; i += 4) buf[i] = st.orig.data[i];
       L.data = buf;
     }
-    invalidate(null);
+    invalidate(layerRect(L));
   };
   return {
     cursor: 'crosshair',
@@ -379,7 +392,7 @@ function makeGradient() {
 function makePicker() {
   const pick = (ev) => {
     const d = S.doc; if (!insideDoc(ev.x, ev.y)) return; let c;
-    if (S.opts.pickSample === 'layer' && d.active) { const x = Math.floor(ev.x), y = Math.floor(ev.y), i = (y * d.w + x) * 4, L = d.active; c = [L.data[i], L.data[i + 1], L.data[i + 2], L.data[i + 3]]; } else c = sampleFlat(ev.x, ev.y);
+    if (S.opts.pickSample === 'layer' && d.active) { const L = d.active, x = Math.floor(ev.x - L.x), y = Math.floor(ev.y - L.y); if (x < 0 || y < 0 || x >= L.w || y >= L.h) return; const i = (y * L.w + x) * 4; c = [L.data[i], L.data[i + 1], L.data[i + 2], L.data[i + 3]]; } else c = sampleFlat(ev.x, ev.y);
     if (c[3] === 0) return; setColor(ev.alt ? 'bg' : 'fg', { r: c[0], g: c[1], b: c[2] });
   };
   return { cursor: 'crosshair', down: pick, move: pick, up() { toast('Color ' + (S.colorTarget === 'bg' ? bgHex() : fgHex()).toUpperCase()); } };
@@ -389,7 +402,7 @@ function makeText() {
     cursor: 'text',
     down(ev) {
       const d = S.doc, L = d.active;
-      if (L && L.text) { const m = measureText(L.text); if (ev.x >= L.text.x - 4 && ev.x <= L.text.x + m.w + 4 && ev.y >= L.text.y - 4 && ev.y <= L.text.y + m.h + 4) { openTextDialog(null, L); return; } }
+      if (L && L.text) { const m = measureText(L.text), tx = L.text.x + L.x, ty = L.text.y + L.y; if (ev.x >= tx - 4 && ev.x <= tx + m.w + 4 && ev.y >= ty - 4 && ev.y <= ty + m.h + 4) { openTextDialog(null, L); return; } }
       if (!insideDoc(ev.x, ev.y)) return; openTextDialog({ x: Math.round(ev.x), y: Math.round(ev.y) }, null);
     }
   };

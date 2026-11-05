@@ -27,10 +27,13 @@ Funciona como página suelta en el navegador y como aplicación de escritorio co
   TIFF; PSD con sus capas; y proyectos `.pintora.json`.
 - **Exportar:** PNG (con transparencia), JPEG, WebP, TIFF y GIF animado (una capa visible por fotograma).
 - **PSD:** importa capas, opacidad, visibilidad y los modos de mezcla equivalentes; exporta el
-  documento con sus capas. Las capas se guardan al tamaño del lienzo (sin recortar su rectángulo original).
-- **Proyecto:** `.pintora.json`, versión 2, con capas, máscaras, selección y colores.
+  documento con sus capas. Cada capa conserva su rectángulo (posición y tamaño) al importar y exportar.
+- **Proyecto:** `.pintora.json`, versión 3, con capas (incluidos sus límites), máscaras, selección y colores.
 
-XCF, 16 bits por canal, perfiles ICC y capas con tamaño propio todavía no están implementados.
+Las capas tienen tamaño y posición propios: puedes importar una imagen como capa sin recortarla,
+moverla total o parcialmente fuera del lienzo y pintar en ella con sus coordenadas locales.
+
+XCF, 16 bits por canal y perfiles ICC todavía no están implementados.
 
 ## Estructura
 

@@ -145,6 +145,26 @@ test('composite honours its rect and a preview override', () => {
   E.composite([l], 4, 4, out, { x0: 1, y0: 1, x1: 3, y1: 3 }, { id: l.id, data: solid(4, 4, px(99, 99, 99)) });
   assert.equal(out[(1 * 4 + 1) * 4], 99); assert.equal(out[0], 0);
 });
+test('composite samples each layer at its own bounds', () => {
+  const doc = new E.Doc(4, 2);
+  doc.addLayer('Fondo', { r: 0, g: 0, b: 0 });
+  const small = doc.addLayerFromData('Pequeña', solid(2, 1, px(255, 0, 0)), 'Prueba', 1, 1, 2, 1);
+  const out = new Uint8ClampedArray(4 * 2 * 4); E.composite(doc.layers, 4, 2, out);
+  assert.deepEqual([0, 1, 2, 3].map((x) => out[(1 * 4 + x) * 4]), [0, 255, 255, 0]);
+  assert.deepEqual(Array.from(out.slice(0, 4)), [0, 0, 0, 255]);
+  assert.equal(small.x, 1); assert.equal(small.y, 1); assert.equal(small.w, 2); assert.equal(small.h, 1);
+});
+test('canvas transforms keep layer bounds relative to the document', () => {
+  const doc = new E.Doc(4, 4);
+  const l = doc.addLayerFromData('Pequeña', solid(2, 2, px(255, 0, 0)), 'Prueba', 2, 2, 2, 2);
+  doc.scaleImage(8, 8);
+  assert.deepEqual([l.x, l.y, l.w, l.h], [4, 4, 4, 4]);
+  doc.flipImage(true);
+  assert.deepEqual([l.x, l.y, l.w, l.h], [0, 4, 4, 4]);
+  doc.rotateImage(1);
+  assert.deepEqual([doc.w, doc.h], [8, 8]);
+  assert.deepEqual([l.x, l.y, l.w, l.h], [0, 0, 4, 4]);
+});
 
 /* ---- selections ---- */
 test('rectangle and ellipse masks', () => {
