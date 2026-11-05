@@ -5,5 +5,6 @@ import { readPsd, writePsd } from 'ag-psd';
 import * as UTIF from 'utif';
 import { GifReader } from 'omggif';
 import { GIFEncoder, quantize, applyPalette } from 'gifenc';
+import { XCFParser } from '@theprogrammingiantpanda/xcfreader/browser';
 
-window.PintoraLibs = { psd: { readPsd, writePsd }, UTIF, gif: { GifReader, GIFEncoder, quantize, applyPalette } };
+window.PintoraLibs = { psd: { readPsd, writePsd }, UTIF, gif: { GifReader, GIFEncoder, quantize, applyPalette }, xcf: { XCFParser } };

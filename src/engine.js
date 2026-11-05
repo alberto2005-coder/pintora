@@ -26,6 +26,18 @@
   function lin2byte(x) {
     return L2S[x <= 0 ? 0 : x >= 1 ? L2S_N : (x * L2S_N + 0.5) | 0];
   }
+  function to16(data) {
+    if (data instanceof Uint16Array) return data;
+    const out = new Uint16Array(data.length);
+    for (let i = 0; i < data.length; i++) out[i] = data[i] * 257;
+    return out;
+  }
+  function to8(data) {
+    if (!(data instanceof Uint16Array)) return new Uint8ClampedArray(data);
+    const out = new Uint8ClampedArray(data.length);
+    for (let i = 0; i < data.length; i++) out[i] = Math.round(data[i] / 257);
+    return out;
+  }
   function s2l(c) { return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
   function l2s(x) {
     x = clamp(x, 0, 1);
@@ -191,13 +203,13 @@
     ['behind', 'Detrás', 'linear', 'Normal'],
     ['lighten_only', 'Solo aclarar', 'linear', 'Aclarar'],
     ['luma_lighten_only', 'Solo aclarar (luma)', 'linear', 'Aclarar'],
-    ['screen', 'Trama (Screen)', 'perceptual', 'Aclarar'],
-    ['dodge', 'Sobreexponer (Dodge)', 'perceptual', 'Aclarar'],
+    ['screen', 'Trama', 'perceptual', 'Aclarar'],
+    ['dodge', 'Sobreexponer', 'perceptual', 'Aclarar'],
     ['addition', 'Suma', 'linear', 'Aclarar'],
     ['darken_only', 'Solo oscurecer', 'linear', 'Oscurecer'],
     ['luma_darken_only', 'Solo oscurecer (luma)', 'linear', 'Oscurecer'],
     ['multiply', 'Multiplicar', 'linear', 'Oscurecer'],
-    ['burn', 'Subexponer (Burn)', 'perceptual', 'Oscurecer'],
+    ['burn', 'Subexponer', 'perceptual', 'Oscurecer'],
     ['linear_burn', 'Quemado lineal', 'perceptual', 'Oscurecer'],
     ['overlay', 'Superponer', 'perceptual', 'Contraste'],
     ['softlight', 'Luz suave', 'perceptual', 'Contraste'],
@@ -239,11 +251,13 @@
   function composite(layers, w, h, out, rect, preview) {
     const x0 = rect ? Math.max(0, rect.x0) : 0, y0 = rect ? Math.max(0, rect.y0) : 0;
     const x1 = rect ? Math.min(w, rect.x1) : w, y1 = rect ? Math.min(h, rect.y1) : h;
-    const L = [];
+    const L = [], out16 = out instanceof Uint16Array, outMax = out16 ? 65535 : 255;
     for (const l of layers) {
       if (!l.visible || l.opacity <= 0) continue;
+      const raw = preview && preview.id === l.id ? preview.data : (l.data16 || l.data);
       L.push({
-        d: preview && preview.id === l.id ? preview.data : l.data,
+        d: raw,
+        max: raw instanceof Uint16Array ? 65535 : 255,
         op: l.opacity,
         mask: l.mask && l.maskOn !== false ? l.mask : null,
         mode: MODES[l.mode] || MODES.normal,
@@ -257,16 +271,18 @@
         let ar = 0, ag = 0, ab = 0, aa = 0;
         let exact = -1; // index of a lone opaque normal layer -> exact bytes
         for (let k = 0; k < L.length; k++) {
-          const ly = L[k], d = ly.d;
+          const ly = L[k], d = ly.d, lmax = ly.max;
           const lx = x - ly.x, lyi = y - ly.y;
           if (lx < 0 || lyi < 0 || lx >= ly.w || lyi >= ly.h) continue;
           const li = lyi * ly.w + lx, ii = li * 4;
-          let la = d[ii + 3] / 255 * ly.op;
+          let la = d[ii + 3] / lmax * ly.op;
           if (ly.mask) la *= ly.mask[li] / 255;
           if (la <= 0) continue;
           const mode = ly.mode;
           if (mode.id === 'dissolve') { la = dissolveNoise(x, y) < la ? 1 : 0; if (la === 0) continue; }
-          const lr = S2L[d[ii]], lg = S2L[d[ii + 1]], lb = S2L[d[ii + 2]];
+          const lr = lmax === 65535 ? s2l(d[ii] / 65535) : S2L[d[ii]];
+          const lg = lmax === 65535 ? s2l(d[ii + 1] / 65535) : S2L[d[ii + 1]];
+          const lb = lmax === 65535 ? s2l(d[ii + 2] / 65535) : S2L[d[ii + 2]];
           if (mode.id === 'normal' || mode.id === 'dissolve') {
             if (la >= 1) { ar = lr; ag = lg; ab = lb; aa = 1; exact = k; continue; }
             if (aa <= 0) { ar = lr; ag = lg; ab = lb; aa = la; exact = -1; continue; }
@@ -288,7 +304,7 @@
             inV[0] = ar; inV[1] = ag; inV[2] = ab; layV[0] = lr; layV[1] = lg; layV[2] = lb;
           } else if (mode.space === 'perceptual') {
             inV[0] = l2s(ar); inV[1] = l2s(ag); inV[2] = l2s(ab);
-            layV[0] = d[ii] / 255; layV[1] = d[ii + 1] / 255; layV[2] = d[ii + 2] / 255;
+            layV[0] = d[ii] / lmax; layV[1] = d[ii + 1] / lmax; layV[2] = d[ii + 2] / lmax;
           } else {
             linToLab(ar, ag, ab, inV); linToLab(lr, lg, lb, layV);
           }
@@ -307,9 +323,12 @@
         if (aa <= 0) { out[i] = 0; out[i + 1] = 0; out[i + 2] = 0; out[i + 3] = 0; continue; }
         if (exact >= 0) {
           const ly = L[exact], li = ((y - ly.y) * ly.w + (x - ly.x)) * 4, d = ly.d;
-          out[i] = d[li]; out[i + 1] = d[li + 1]; out[i + 2] = d[li + 2]; out[i + 3] = 255;
+          if (ly.max === outMax) { out[i] = d[li]; out[i + 1] = d[li + 1]; out[i + 2] = d[li + 2]; out[i + 3] = outMax; }
+          else if (out16) { out[i] = d[li] * 257; out[i + 1] = d[li + 1] * 257; out[i + 2] = d[li + 2] * 257; out[i + 3] = 65535; }
+          else { out[i] = Math.round(d[li] / 257); out[i + 1] = Math.round(d[li + 1] / 257); out[i + 2] = Math.round(d[li + 2] / 257); out[i + 3] = 255; }
         } else {
-          out[i] = lin2byte(ar); out[i + 1] = lin2byte(ag); out[i + 2] = lin2byte(ab); out[i + 3] = Math.round(aa * 255);
+          const cv = (v) => out16 ? Math.round(l2s(clamp(v, 0, 1)) * 65535) : lin2byte(v);
+          out[i] = cv(ar); out[i + 1] = cv(ag); out[i + 2] = cv(ab); out[i + 3] = Math.round(aa * outMax);
         }
       }
     }
@@ -1146,7 +1165,7 @@
   function makeLayer(w, h, name, fill, x, y) {
     const l = {
       id: 'L' + layerSeq++, name: name || 'Capa', visible: true, opacity: 1, mode: 'normal',
-      lockAlpha: false, mask: null, maskOn: true, text: null,
+      lockAlpha: false, mask: null, maskOn: true, text: null, path: null, depth: 8, data16: null,
       x: x || 0, y: y || 0, w, h, data: new Uint8ClampedArray(w * h * 4)
     };
     if (fill) for (let i = 0; i < w * h; i++) { l.data[i * 4] = fill.r; l.data[i * 4 + 1] = fill.g; l.data[i * 4 + 2] = fill.b; l.data[i * 4 + 3] = fill.a === undefined ? 255 : fill.a; }
@@ -1156,16 +1175,22 @@
   class Doc {
     constructor(w, h) {
       this.w = w; this.h = h; this.layers = []; this.activeId = null; this.selection = null;
+      this.depth = 8; this.icc = null; this.colorSpace = 'sRGB';
       this.editMask = false; this.undoStack = []; this.redoStack = []; this.maxBytes = 600 * 1024 * 1024; this.maxSteps = 100;
     }
     get active() { return this.layers.find((l) => l.id === this.activeId) || null; }
     indexOf(id) { return this.layers.findIndex((l) => l.id === id); }
     snapshot() {
-      return { w: this.w, h: this.h, activeId: this.activeId, selection: this.selection, editMask: this.editMask, layers: this.layers.map((l) => Object.assign({}, l)) };
+      return {
+        w: this.w, h: this.h, activeId: this.activeId, selection: this.selection, editMask: this.editMask,
+        depth: this.depth, icc: this.icc,
+        layers: this.layers.map((l) => Object.assign({}, l, { path: l.path ? JSON.parse(JSON.stringify(l.path)) : null }))
+      };
     }
     restore(s) {
       this.w = s.w; this.h = s.h; this.activeId = s.activeId; this.selection = s.selection; this.editMask = s.editMask;
-      this.layers = s.layers.map((l) => Object.assign({}, l));
+      this.depth = s.depth || 8; this.icc = s.icc || null;
+      this.layers = s.layers.map((l) => Object.assign({}, l, { path: l.path ? JSON.parse(JSON.stringify(l.path)) : null }));
     }
     /** Record the state before an operation. */
     checkpoint(label) {
@@ -1180,7 +1205,7 @@
     memoryBytes() {
       const seen = new Set(); let total = 0;
       const add = (buf) => { if (buf && !seen.has(buf)) { seen.add(buf); total += buf.byteLength; } };
-      const visit = (s) => { add(s.selection); for (const l of s.layers) { add(l.data); add(l.mask); } };
+      const visit = (s) => { add(s.selection); for (const l of s.layers) { add(l.data); add(l.data16); add(l.mask); } };
       for (const e of this.undoStack) visit(e.state);
       for (const e of this.redoStack) visit(e.state);
       visit(this.snapshot());
@@ -1203,12 +1228,26 @@
     }
     /** Make the layer's buffers private so in-place edits never touch history snapshots. Returns the originals. */
     touch(layer, what) {
-      const orig = { data: layer.data, mask: layer.mask };
-      if (what !== 'mask') layer.data = new Uint8ClampedArray(layer.data);
+      const orig = { data: layer.data, data16: layer.data16, mask: layer.mask };
+      if (what !== 'mask') {
+        layer.data = new Uint8ClampedArray(layer.data);
+        layer.data16 = null; // pixel tools edit the 8-bit working buffer
+      }
       if (what === 'mask' && layer.mask) layer.mask = new Uint8Array(layer.mask);
       return orig;
     }
     beginOp(label, layer, what) { this.checkpoint(label); return layer ? this.touch(layer, what) : null; }
+    setDepth(bits) {
+      bits = bits === 16 ? 16 : 8;
+      if (this.depth === bits) return false;
+      this.checkpoint(bits === 16 ? 'Profundidad de 16 bits' : 'Profundidad de 8 bits');
+      for (const l of this.layers) {
+        if (bits === 16) { if (!l.data16) l.data16 = to16(l.data); l.depth = 16; }
+        else { if (l.data16) l.data = to8(l.data16); l.data16 = null; l.depth = 8; }
+      }
+      this.depth = bits;
+      return true;
+    }
 
     addLayer(name, fill, index) {
       this.checkpoint('Nueva capa');
@@ -1330,10 +1369,13 @@
     }
     return out;
   }
+  function flatten16(layers, w, h) {
+    const out = new Uint16Array(w * h * 4); composite(layers, w, h, out); return out;
+  }
 
   return {
-    clamp, S2L, lin2byte, s2l, l2s, hexToRgb, rgbToHex, rgbToHsl, hslToRgb, linToLab, labToLin,
-    MODES, MODE_LIST, SEP, NONSEP, composite, flattenOn,
+    clamp, S2L, lin2byte, s2l, l2s, to16, to8, hexToRgb, rgbToHex, rgbToHsl, hslToRgb, linToLab, labToLin,
+    MODES, MODE_LIST, SEP, NONSEP, composite, flattenOn, flatten16,
     maskIsEmpty, normalizeMask, rectMask, ellipseMask, polygonMask, combineMasks, invertMask, maskBounds,
     growMask, shrinkMask, featherMask, floodMask, selectionEdges, distanceTransform,
     stampDab, applyCoverage, applyCoverageMask, applyClone, applyDodgeBurn, applyConvolve, Stroker, fillMask, fillGradient,

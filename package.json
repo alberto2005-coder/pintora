@@ -54,6 +54,7 @@
     }
   },
   "dependencies": {
+    "@theprogrammingiantpanda/xcfreader": "^1.1.0",
     "ag-psd": "^33.0.0",
     "gifenc": "^1.0.3",
     "omggif": "^1.0.10",

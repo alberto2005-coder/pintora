@@ -18,14 +18,16 @@ npm run test:all  # las tres suites
 ### Cobertura automatizada
 
 - **Unitarias:** composición por capas, 35 modos de mezcla, selecciones, máscaras, pincel, filtros,
-  curvas, histograma, historial, PSD, TIFF y GIF.
-- **Interfaz:** 27 casos sobre el HTML construido; menús, herramientas, botones de capa, paneles
+  curvas, histograma, historial, PSD, TIFF de 8/16 bits con perfil ICC, GIF, XCF, trazados vectoriales
+  y conversión de perfiles ICC RGB de matriz/TRC.
+- **Interfaz:** 31 casos sobre el HTML construido; menús, herramientas, botones de capa, paneles
   desplegables, capas con límites, máscaras, pintura, selección mágica, texto, filtros,
-  transformaciones, temas, proyecto v3 y exportaciones con un `window.claude` simulado.
+  transformaciones, temas, proyecto v4, trazados vectoriales y SVG, XCF, idioma español/inglés de
+  menús, modos, filtros, atajos y mensajes, y exportaciones con un `window.claude` simulado.
 - **Ejecutable:** 4 casos con la ventana de producción de `electron/window.js`:
   1. Ventana nativa, menú propio, tamaño mínimo y ausencia de `window.claude`.
-  2. Descargas reales del fallback del navegador para PNG, JPEG, WebP, TIFF, GIF, proyecto v3 y PSD.
-  3. Apertura desde disco de los archivos descargados, incluidos PSD, TIFF, GIF, proyecto y apertura
+  2. Descargas reales del fallback del navegador para PNG, JPEG, WebP, TIFF, GIF, XCF, proyecto v4 y PSD.
+  3. Apertura desde disco de los archivos descargados, incluidos PSD, TIFF, GIF, XCF, proyecto y apertura
      como capa.
   4. Autoguardado real en IndexedDB, cierre de la ventana y recuperación de la sesión.
 
@@ -74,14 +76,16 @@ npm run test:all  # all three suites
 ### Automated coverage
 
 - **Unit tests:** layer compositing, 35 blend modes, selections, masks, brush, filters, curves,
-  histogram, history, PSD, TIFF and GIF.
-- **Interface:** 27 cases on the built HTML; menus, tools, layer buttons, collapsible panels, layers
-  with bounds, masks, painting, magic selection, text, filters, transforms, themes, v3 projects and
-  exports with a simulated `window.claude`.
+  histogram, history, PSD, 8/16-bit TIFF with an ICC profile, GIF, XCF, vector paths and conversion
+  of RGB matrix/TRC ICC profiles.
+- **Interface:** 31 cases on the built HTML; menus, tools, layer buttons, collapsible panels, layers
+  with bounds, masks, painting, magic selection, text, filters, transforms, themes, v4 projects, vector
+  paths and SVG, XCF, Spanish/English menus, modes, filters, shortcuts and messages, and exports with a
+  simulated `window.claude`.
 - **Executable:** 4 cases using the production window from `electron/window.js`:
   1. Native window, editor-owned menu, minimum size and absence of `window.claude`.
-  2. Real browser-fallback downloads for PNG, JPEG, WebP, TIFF, GIF, v3 project and PSD.
-  3. Opening the downloaded files from disk, including PSD, TIFF, GIF, project and open-as-layer.
+  2. Real browser-fallback downloads for PNG, JPEG, WebP, TIFF, GIF, XCF, v4 project and PSD.
+  3. Opening the downloaded files from disk, including PSD, TIFF, GIF, XCF, project and open-as-layer.
   4. Real IndexedDB autosave, closing the window and recovering the session.
 
 Executable downloads are intercepted with `session.on('will-download')` and written to a temporary

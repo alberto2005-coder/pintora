@@ -19,6 +19,7 @@ const TOOLS = [
   { id: 'gradient', name: 'Degradado', key: 'G', icon: 'gradient', opts: ['gradShape', 'gradColors', 'opacity'], hint: 'Arrastra de inicio a fin.' },
   { id: 'picker', name: 'Cuentagotas', key: 'O', icon: 'picker', opts: ['pickSample'], hint: 'Clic = color de frente, Alt+clic = color de fondo.' },
   { id: 'text', name: 'Texto', key: 'T', icon: 'text', opts: [], hint: 'Haz clic en el lienzo para escribir. Clic sobre un texto lo edita.' },
+  { id: 'path', name: 'Trazado vectorial', key: 'V', icon: 'path', opts: ['pathWidth'], hint: 'Clic para añadir puntos; arrastra un punto para moverlo; Enter o doble clic cierra el trazado.' },
   { id: 'zoom', name: 'Zoom', key: 'Z', icon: 'zoom', opts: [], hint: 'Clic acerca, Alt+clic aleja, arrastra para encuadrar un área.' },
   { id: 'hand', name: 'Mano', key: 'H', icon: 'hand', opts: [], hint: 'Arrastra para desplazar. También con la barra espaciadora.' }
 ];
@@ -45,6 +46,7 @@ const OPTDEFS = {
   dbMode: { type: 'seg', options: [['dodge', 'Aclarar'], ['burn', 'Oscurecer']] },
   dbRange: { label: 'Rango', type: 'select', options: [['shadows', 'Sombras'], ['midtones', 'Medios tonos'], ['highlights', 'Luces']] },
   pickSample: { label: 'Muestra', type: 'select', options: [['merged', 'Imagen completa'], ['layer', 'Capa activa']] },
+  pathWidth: { label: 'Grosor', type: 'range', min: 1, max: 40, step: 1, fmt: (v) => v + ' px' },
   dyn: { label: 'Presión del lápiz', type: 'check' }
 };
 
@@ -407,6 +409,70 @@ function makeText() {
     }
   };
 }
+function makePath() {
+  let drag = null;
+  const ensure = () => {
+    let L = S.doc.active; if (!L) return null;
+    if (!L.path) L = newPathLayer();
+    return L;
+  };
+  const finish = (L) => {
+    if (!L || !L.path || L.path.points.length < 2) return;
+    S.doc.checkpoint('Cerrar trazado');
+    L.path = Paths.clone(L.path); L.path.closed = true; L.path.name = L.name;
+    rasterizePathLayer(L); docChanged();
+  };
+  return {
+    cursor: 'crosshair',
+    down(ev) {
+      if (!insideDoc(ev.x, ev.y)) return;
+      const L = ensure(); if (!L) return;
+      const lx = ev.x - L.x, ly = ev.y - L.y;
+      const i = Paths.hitPoint(L.path, lx, ly, 9 / S.view.zoom);
+      if (i >= 0) {
+        if (i === 0 && L.path.points.length >= 2) { finish(L); return; }
+        S.doc.checkpoint('Mover punto de trazado');
+        L.path = Paths.clone(L.path); drag = { L, i }; return;
+      }
+      S.doc.checkpoint('Añadir punto de trazado');
+      L.path = Paths.clone(L.path); L.path.points.push([lx, ly]); L.path.name = L.name;
+      rasterizePathLayer(L); docChanged();
+    },
+    move(ev) {
+      if (!drag) return;
+      const L = drag.L, p = Paths.clone(L.path);
+      p.points[drag.i] = [ev.x - L.x, ev.y - L.y]; L.path = p;
+      rasterizePathLayer(L); docChanged();
+    },
+    up() { drag = null; },
+    dbl() { const L = S.doc.active; if (L && L.path) finish(L); },
+    cancel() { drag = null; },
+    deactivate() { drag = null; },
+    key(e) {
+      if (e.key === 'Enter') { const L = S.doc.active; if (L && L.path) { finish(L); return true; } }
+      if (e.key === 'Backspace' && S.doc.active && S.doc.active.path && S.doc.active.path.points.length) {
+        const L = S.doc.active; S.doc.checkpoint('Quitar punto de trazado'); L.path = Paths.clone(L.path); L.path.points.pop(); rasterizePathLayer(L); docChanged(); return true;
+      }
+      if (e.key === 'Escape' && S.doc.active && S.doc.active.path && S.doc.active.path.points.length) { finish(S.doc.active); return true; }
+      return false;
+    },
+    overlay(ctx) {
+      const L = S.doc.active; if (!L || !L.path || !L.path.points.length) return;
+      const p = L.path;
+      ctx.save(); ctx.translate(S.view.ox + L.x * S.view.zoom, S.view.oy + L.y * S.view.zoom); ctx.scale(S.view.zoom, S.view.zoom);
+      ctx.beginPath(); p.points.forEach((q, i) => { if (i) ctx.lineTo(q[0], q[1]); else ctx.moveTo(q[0], q[1]); });
+      if (p.closed) ctx.closePath();
+      if (p.closed && p.fill) { ctx.fillStyle = p.fill; ctx.fill(); }
+      if (p.stroke && p.strokeWidth > 0) { ctx.strokeStyle = p.stroke; ctx.lineWidth = p.strokeWidth; ctx.lineJoin = 'round'; ctx.stroke(); }
+      ctx.restore();
+      for (const q of p.points) {
+        const [x, y] = toScreen(q[0] + L.x, q[1] + L.y);
+        ctx.beginPath(); ctx.arc(x, y, 4.5, 0, 7); ctx.fillStyle = '#fff'; ctx.fill(); ctx.strokeStyle = '#000'; ctx.stroke();
+      }
+    }
+  };
+}
+
 function makeZoom() {
   let st = null;
   return {
@@ -430,7 +496,7 @@ function makeZoom() {
 const TOOL_IMPL = {
   rect: makeBoxSelect('rect'), ellipse: makeBoxSelect('ellipse'), free: makeFreeSelect(), fuzzy: makeColorSelect(true), bycolor: makeColorSelect(false),
   move: makeMove(), crop: makeCrop(), pencil: makePaint('pencil'), paintbrush: makePaint('paintbrush'), eraser: makePaint('eraser'), airbrush: makePaint('airbrush'),
-  clone: makePaint('clone'), dodgeburn: makePaint('dodgeburn'), blur: makePaint('blur'), smudge: makePaint('smudge'), bucket: makeBucket(), gradient: makeGradient(), picker: makePicker(), text: makeText(), zoom: makeZoom(), hand: { cursor: 'grab' }
+  clone: makePaint('clone'), dodgeburn: makePaint('dodgeburn'), blur: makePaint('blur'), smudge: makePaint('smudge'), bucket: makeBucket(), gradient: makeGradient(), picker: makePicker(), text: makeText(), path: makePath(), zoom: makeZoom(), hand: { cursor: 'grab' }
 };
 
 function selectTool(id) {

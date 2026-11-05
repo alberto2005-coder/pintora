@@ -134,6 +134,7 @@
   }
   function doMenu(top, label) {
     openMenu(top);
+    if (window.PintoraI18n) window.PintoraI18n.apply();
     menuItem(label);
   }
   function layerButton(label) {
@@ -633,12 +634,12 @@
   });
 
   /* ---------- 22. proyecto y PSD ---------- */
-  add('archivos: guardar proyecto v3, abrirlo y guardar PSD', async () => {
+  add('archivos: guardar proyecto v4, abrirlo y guardar PSD', async () => {
     const { d } = reset(16, 12);
     const own = ownLayer(d, 'Capa propia', 3, 2, 4, 4, { r: 220, g: 20, b: 30 });
     P.docChanged();
     const project = P.projectData();
-    check(project.format === 'pintora' && project.version === 3, 'El proyecto no es v3');
+    check(project.format === 'pintora' && project.version === 4, 'El proyecto no es v4');
     check(project.w === 16 && project.h === 12, 'Tamaño de proyecto incorrecto');
     const savedLayer = project.layers.find((l) => l.name === 'Capa propia');
     check(!!savedLayer && savedLayer.x === 3 && savedLayer.y === 2 && savedLayer.w === 4 && savedLayer.h === 4, 'El proyecto no guardó los límites de capa');
@@ -648,7 +649,7 @@
     const ps = lastSave('.pintora.json');
     check(!!ps, 'No se guardó el proyecto');
     const parsed = JSON.parse(saveText(ps));
-    check(parsed.version === 3 && parsed.layers.length === 2, 'El proyecto guardado está incompleto');
+    check(parsed.version === 4 && parsed.layers.length === 2, 'El proyecto guardado está incompleto');
 
     await P.loadProject(JSON.stringify(parsed), 'Cargado');
     check(S.doc.w === 16 && S.doc.h === 12, 'Abrir el proyecto no restauró el tamaño');
@@ -667,7 +668,7 @@
   });
 
   /* ---------- 23. exportaciones ---------- */
-  add('exportaciones: PNG, JPEG, WebP, TIFF y GIF con tamaño y contenido', async () => {
+  add('exportaciones: PNG, JPEG, WebP, TIFF 8/16 y GIF con tamaño y contenido', async () => {
     const { d } = reset(8, 6);
     solid(d.layers[0], { r: 255, g: 255, b: 255 });
     const red = d.addLayer('Rojo', { r: 220, g: 20, b: 20 });
@@ -680,16 +681,19 @@
     await P.exportImage('jpeg', 0.9, { r: 255, g: 255, b: 255 }, 100);
     await P.exportImage('webp', 0.9, { r: 255, g: 255, b: 255 }, 100);
     await P.exportImage('tiff', 0.9, { r: 255, g: 255, b: 255 }, 100);
+    await P.exportImage('tiff16', 0.9, { r: 255, g: 255, b: 255 }, 100);
     await P.exportImage('gif', 0.9, { r: 255, g: 255, b: 255 }, 120);
-    const png = lastSave('.png'), jpg = lastSave('.jpg'), webp = lastSave('.webp'), tiff = lastSave('.tiff'), gif = lastSave('.gif');
-    check(!!png && !!jpg && !!webp && !!tiff && !!gif, 'Falta alguna exportación: ' + saves.map((s) => s.filename).join(', '));
+    const png = lastSave('.png'), jpg = lastSave('.jpg'), webp = lastSave('.webp'), gif = lastSave('.gif');
+    const tiffs = saves.filter((s) => s.filename.toLowerCase().endsWith('.tiff'));
+    check(!!png && !!jpg && !!webp && !!gif && tiffs.length === 2, 'Falta alguna exportación: ' + saves.map((s) => s.filename).join(', '));
     for (const s of [png, jpg, webp]) {
       const bm = await createImageBitmap(blobOf(s));
       check(bm.width === 8 && bm.height === 6, 'La imagen exportada ' + s.filename + ' no mide 8×6');
       bm.close();
     }
-    const timg = P.F.readTiff(tiff.buf);
-    check(timg.w === 8 && timg.h === 6, 'El TIFF exportado no mide 8×6');
+    const timg8 = P.F.readTiff(tiffs[0].buf), timg16 = P.F.readTiff(tiffs[1].buf);
+    check(timg8.w === 8 && timg8.h === 6 && timg8.depth === 8, 'El TIFF de 8 bits no mide 8×6');
+    check(timg16.w === 8 && timg16.h === 6 && timg16.depth === 16, 'El TIFF de 16 bits no mide 8×6 o no declara 16 bits');
     const gimg = P.F.readGif(gif.buf);
     check(gimg.w === 8 && gimg.h === 6 && gimg.frames >= 2, 'El GIF no contiene los fotogramas de las capas');
     check(flatAt(4, 3)[3] === 255, 'La imagen de origen está vacía');
@@ -761,7 +765,7 @@
     doMenu('Ayuda', 'Acerca de Pintora');
     check($('.dialog header').textContent === 'Acerca de Pintora', 'No se abrió Acerca de');
     const aboutText = $('.dialog .body').textContent;
-    check(aboutText.includes('0.1.0') && aboutText.includes('21 herramientas') && aboutText.includes('PSD') && aboutText.includes('v3') && aboutText.includes('GPL-3.0-or-later'), 'Acerca de no refleja las capacidades actuales');
+    check(aboutText.includes('0.1.0') && aboutText.includes('22 herramientas') && aboutText.includes('PSD') && aboutText.includes('v4') && aboutText.includes('GPL-3.0-or-later'), 'Acerca de no refleja las capacidades actuales');
     await okDialog();
   });
 
@@ -787,6 +791,83 @@
     setField('hh', 30);
     await okDialog();
     check(S.doc.w === 40 && S.doc.h === 30, 'Tamaño del lienzo no se aplicó');
+  });
+
+  /* ---------- 28. viewport ---------- */
+  add('ventana: la aplicación ocupa todo el viewport sin scroll', () => {
+    const html = document.documentElement, app = $('#app').getBoundingClientRect();
+    check(html.scrollWidth === innerWidth, 'Hay scroll horizontal: ' + html.scrollWidth + ' != ' + innerWidth);
+    check(html.scrollHeight === innerHeight, 'Hay scroll vertical: ' + html.scrollHeight + ' != ' + innerHeight);
+    near(app.x, 0, 0.5, 'La app no empieza en x=0');
+    near(app.y, 0, 0.5, 'La app no empieza en y=0');
+    near(app.width, innerWidth, 0.5, 'La app no ocupa el ancho del viewport');
+    near(app.height, innerHeight, 0.5, 'La app no ocupa el alto del viewport');
+  });
+
+  /* ---------- 29. idioma ---------- */
+  add('idioma: español e inglés, menús, modos, filtros, atajos y estado', async () => {
+    reset(32, 24);
+    P.setLang('es');
+    check($('#menus .menubtn').textContent.trim() === 'Archivo', 'El menú inicial no está en español');
+    check($('.dock.layers h3').textContent.trim() === 'Capas', 'El panel de capas no está en español');
+    check($$('#modeSel option').some((o) => o.textContent === 'Trama') && !$$('#modeSel option').some((o) => /Screen|Dodge|Burn/.test(o.textContent)), 'Los modos de mezcla no están limpios en español');
+    P.setLang('en');
+    check(document.documentElement.lang === 'en', 'El documento no declara inglés');
+    check($('#menus .menubtn').textContent.trim() === 'File', 'El menú no cambió a File');
+    check($('.dock.layers h3').textContent.trim() === 'Layers', 'El panel no cambió a Layers');
+    check($('#toolbox .tool').title.includes('Rectangular selection'), 'La herramienta no cambió a inglés: ' + $('#toolbox .tool').title);
+    check($('#stInfo').textContent.includes('layer'), 'El estado no cambió a inglés: ' + $('#stInfo').textContent);
+    check($$('#modeSel option').some((o) => o.textContent === 'Screen') && $$('#modeSel option').some((o) => o.textContent === 'Dodge') && $$('#modeSel option').some((o) => o.textContent === 'Burn'), 'Los modos de mezcla no se tradujeron');
+    check($$('#modeSel optgroup').some((o) => o.label === 'Lighten') && $$('#modeSel optgroup').some((o) => o.label === 'Contrast'), 'Los grupos de modos no se tradujeron: ' + $$('#modeSel optgroup').map((o) => o.label).join(', '));
+    doMenu('File', 'Export as image…');
+    window.PintoraI18n.apply();
+    const exportDialog = $('.dialog .body').textContent;
+    check(exportDialog.includes('PNG (lossless') && exportDialog.includes('Animated GIF'), 'El diálogo de exportación no se tradujo: ' + exportDialog.slice(0, 120));
+    await cancelDialog();
+    doMenu('Help', 'Keyboard shortcuts');
+    window.PintoraI18n.apply();
+    const help = $('.dialog .body').textContent;
+    check(help.includes('Rectangular, elliptical') && help.includes('Ctrl+Shift+D') && help.includes('Copy · cut'), 'Los atajos no se tradujeron: ' + help.slice(0, 120));
+    await okDialog();
+    doMenu('Help', 'About Pintora');
+    window.PintoraI18n.apply();
+    const about = $('.dialog .body').textContent;
+    check(about.includes('22 tools') && about.includes('8/16-bit TIFF') && about.includes('ICC profile'), 'Acerca de no se tradujo: ' + about.slice(0, 160));
+    await okDialog();
+    P.setLang('es');
+    check($('#menus .menubtn').textContent.trim() === 'Archivo', 'No se pudo volver al español');
+    check($$('#modeSel option').some((o) => o.textContent === 'Trama'), 'Los modos no volvieron al español');
+  });
+
+  /* ---------- 30. trazado vectorial y SVG ---------- */
+  add('trazado vectorial: crear, cerrar y exportar SVG', async () => {
+    reset(40, 30);
+    P.selectTool('path');
+    const t = P.TOOL_IMPL.path;
+    t.down({ x: 5, y: 5, shift: false, ctrl: false, alt: false });
+    t.down({ x: 30, y: 8, shift: false, ctrl: false, alt: false });
+    t.down({ x: 18, y: 24, shift: false, ctrl: false, alt: false });
+    t.key({ key: 'Enter' });
+    const L = S.doc.active;
+    check(!!L && !!L.path && L.path.closed && L.path.points.length === 3, 'El trazado no conserva sus tres puntos cerrados');
+    check(Array.from(L.data).some((v) => v > 0), 'El trazado no se rasterizó en la capa');
+    clearSaves();
+    await P.exportSvg();
+    const svg = lastSave('.svg');
+    check(!!svg && saveText(svg).includes('<path') && saveText(svg).includes('M 5 5'), 'El SVG no contiene el trazado vectorial');
+  });
+
+  /* ---------- 31. XCF de ida y vuelta ---------- */
+  add('archivos: guardar y abrir XCF con capas y opacidad', async () => {
+    reset(12, 8);
+    const L = S.doc.layers[0]; L.opacity = 0.6; L.name = 'XCF prueba';
+    clearSaves();
+    await P.saveXcf();
+    const saved = lastSave('.xcf');
+    check(!!saved && saved.buf.byteLength > 0, 'No se guardó el XCF');
+    const parsed = await P.F.readXcf(saved.buf);
+    check(parsed.w === 12 && parsed.h === 8 && parsed.layers.length === 1, 'El XCF no conserva tamaño y capas');
+    check(parsed.layers[0].name === 'XCF prueba' && Math.abs(parsed.layers[0].opacity - 0.6) < 0.03, 'El XCF no conserva nombre y opacidad');
   });
 
   window.__uiTests = tests;

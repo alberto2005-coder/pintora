@@ -50,6 +50,21 @@ test('TIFF round trip keeps pixels and size', () => {
   assert.deepEqual(Array.from(back.data.slice(4, 8)), [0, 255, 0, 255]);
 });
 
+test('16-bit TIFF export keeps pixels and reports 16-bit depth', () => {
+  const data = new Uint8ClampedArray([12, 128, 240, 255, 255, 0, 64, 128]);
+  const back = F.readTiff(F.writeTiff16(data, 2, 1));
+  assert.equal(back.w, 2);
+  assert.equal(back.h, 1);
+  assert.equal(back.depth, 16);
+  assert.deepEqual(Array.from(back.data.slice(0, 4)), [12, 128, 240, 255]);
+  assert.deepEqual(Array.from(back.data.slice(4, 8)), [255, 0, 64, 128]);
+  const deep = F.readTiff16(F.writeTiff16(new Uint16Array([1, 256, 65535, 65535]), 1, 1));
+  assert.equal(deep.depth, 16);
+  assert.deepEqual(Array.from(deep.data16), [1, 256, 65535, 65535]);
+  const withProfile = F.writeTiff16(new Uint16Array([1, 2, 3, 4]), 1, 1, new Uint8Array([9, 8, 7, 6]));
+  assert.deepEqual(Array.from(F.readTiff16(withProfile).profile), [9, 8, 7, 6]);
+});
+
 test('GIF round trip keeps frames and size', () => {
   const red = new Uint8ClampedArray([255, 0, 0, 255, 255, 0, 0, 255]);
   const blue = new Uint8ClampedArray([0, 0, 255, 255, 0, 0, 255, 255]);
@@ -69,4 +84,28 @@ test('PSD layer rectangles keep their offset and size', () => {
   assert.equal(psd.layers[0].left, 2);
   assert.equal(psd.layers[0].top, 1);
   assert.deepEqual(Array.from(psd.layers[0].data.slice(0, 4)), [1, 2, 3, 255]);
+});
+
+test('XCF round trip keeps layers, pixels, opacity and offsets', async () => {
+  const w = 2, h = 1;
+  const a = new Uint8ClampedArray([255, 0, 0, 255, 0, 255, 0, 255]);
+  const b = new Uint8ClampedArray([0, 0, 255, 255, 255, 255, 0, 128]);
+  const buf = F.writeXcf({
+    w, h,
+    layers: [
+      { name: 'Fondo', data: a, opacity: 1, visible: true, mode: 'normal' },
+      { name: 'Mezcla', data: b, opacity: 0.5, visible: true, mode: 'multiply', x: 1, y: 0 }
+    ]
+  });
+  assert.ok(buf.byteLength > 0);
+  const xcf = await F.readXcf(buf);
+  assert.equal(xcf.w, w);
+  assert.equal(xcf.h, h);
+  assert.equal(xcf.layers.length, 2);
+  assert.deepEqual(xcf.layers.map((l) => l.name).sort(), ['Fondo', 'Mezcla']);
+  const m = xcf.layers.find((l) => l.name === 'Mezcla');
+  assert.equal(m.mode, 'multiply');
+  assert.ok(Math.abs(m.opacity - 0.5) < 0.02, 'opacity ' + m.opacity);
+  assert.equal(m.left, 1);
+  assert.deepEqual(Array.from(m.data.slice(0, 4)), [0, 0, 255, 255]);
 });

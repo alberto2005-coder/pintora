@@ -1,5 +1,7 @@
 /* ===== Pintora app core: state, canvas view, rendering, files ===== */
 const E = PintoraEngine;
+const Paths = PintoraPaths;
+const ICC = PintoraICC;
 const $ = (s, r) => (r || document).querySelector(s);
 const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
 const clamp = E.clamp;
@@ -42,6 +44,7 @@ const ICONS = {
   gradient: '<rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 5v14M12 5v14M16 5v14" stroke-opacity=".5"/>',
   picker: '<path d="M14.5 4.5l5 5M17 7l-9 9-1 3 3-1 9-9"/><path d="M15 3.5a2 2 0 0 1 3 0l2.5 2.5a2 2 0 0 1 0 3"/>',
   text: '<path d="M5 6V4h14v2M12 4v16M9 20h6"/>',
+  path: '<path d="M5 19l4-12 6 10 4-8"/><circle cx="5" cy="19" r="1.6"/><circle cx="9" cy="7" r="1.6"/><circle cx="15" cy="17" r="1.6"/><circle cx="19" cy="9" r="1.6"/>',
   zoom: '<circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5M8 10.5h5M10.5 8v5"/>',
   hand: '<path d="M8 12V6.5a1.5 1.5 0 0 1 3 0V11M11 10V5a1.5 1.5 0 0 1 3 0v6M14 10V6.5a1.5 1.5 0 0 1 3 0V12M8 12l-1.5-1.8a1.5 1.5 0 0 0-2.3 1.9L7 17c1.5 3 3 4 6 4 3.5 0 5-2 5-6v-3"/>',
   undo: '<path d="M9 7L4 12l5 5"/><path d="M4 12h10a6 6 0 0 1 0 12" transform="translate(0 -4)"/>',
@@ -75,18 +78,19 @@ function icon(name) {
 /* ---------------- state ---------------- */
 const S = {
   doc: null, name: 'Sin título', fg: { r: 0, g: 0, b: 0 }, bg: { r: 255, g: 255, b: 255 }, colorTarget: 'fg',
+  pathLayer: null,
   tool: 'paintbrush', prevTool: null,
   view: { zoom: 1, ox: 0, oy: 0 }, hover: null, spaceDown: false,
   flat: null, flatImg: null, docCanvas: null, docCtx: null, dirty: null, preview: null, overlayFn: null,
   cov: null, covW: 0, covH: 0,
   clip: null, lastFilter: null, showGrid: false, gridSize: 32, showSel: true,
   antsPath: null, antsSel: undefined, antOffset: 0,
-  theme: 'system', modified: false,
+  theme: 'system', lang: 'es', modified: false,
   opts: {
     size: 24, hardness: 0.6, opacity: 1, spacing: 0.12, flow: 0.25, exposure: 0.35,
     selmode: 'replace', threshold: 20, sampleMerged: false, fillMode: 'similar', gradShape: 'linear', gradColors: 'fgbg',
     moveTarget: 'layer', dbMode: 'dodge', dbRange: 'midtones', aa: true, pickSample: 'merged', dyn: true,
-    strength: 0.5, blurMode: 'blur', blurRadius: 4
+    strength: 0.5, blurMode: 'blur', blurRadius: 4, pathWidth: 2
   }
 };
 const MAX_DIM = 8192;
@@ -313,6 +317,34 @@ async function decodeImage(file) {
 function dataToCanvas(data, w, hh) {
   const c = document.createElement('canvas'); c.width = w; c.height = hh; c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(data), w, hh), 0, 0); return c;
 }
+function rasterizePathLayer(L) {
+  if (!L || !L.path) return;
+  const c = document.createElement('canvas'); c.width = L.w; c.height = L.h;
+  const g = c.getContext('2d');
+  if (L.path.points && L.path.points.length >= 2) {
+    g.beginPath();
+    L.path.points.forEach((p, i) => { if (i) g.lineTo(p[0], p[1]); else g.moveTo(p[0], p[1]); });
+    if (L.path.closed) g.closePath();
+    g.globalAlpha = L.path.opacity === undefined ? 1 : L.path.opacity;
+    if (L.path.closed && L.path.fill) { g.fillStyle = L.path.fill; g.fill(); }
+    if (L.path.stroke && L.path.strokeWidth > 0) { g.strokeStyle = L.path.stroke; g.lineWidth = L.path.strokeWidth; g.lineJoin = 'round'; g.lineCap = 'round'; g.stroke(); }
+  }
+  L.data = g.getImageData(0, 0, L.w, L.h).data;
+  L.data16 = null; L.depth = 8;
+}
+function newPathLayer(name) {
+  const d = S.doc; if (!d) return null;
+  const L = d.addLayer(name || 'Trazado');
+  L.path = { points: [], closed: false, fill: fgHex(), stroke: bgHex(), strokeWidth: S.opts.pathWidth || 2, opacity: 1, name: L.name };
+  S.pathLayer = L.id;
+  return L;
+}
+function bytesToB64(bytes) {
+  let s = ''; for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]); return btoa(s);
+}
+function b64ToBytes(s) {
+  const raw = atob(s || ''), out = new Uint8Array(raw.length); for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i); return out;
+}
 function canvasBlob(c, type, q) { return new Promise((res) => c.toBlob(res, type, q)); }
 
 async function saveBlob(name, blob) {
@@ -326,10 +358,14 @@ async function saveBlob(name, blob) {
   document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 4000);
   toast('Guardado: ' + name);
 }
-function baseName() { return (S.name || 'imagen').replace(/\.(pintora\.json|json|png|jpe?g|webp)$/i, ''); }
+function baseName() { return (S.name || 'imagen').replace(/\.(pintora\.json|json|png|jpe?g|webp|xcf)$/i, ''); }
 
 async function exportImage(fmt, quality, bg, delay) {
   const d = S.doc; flushDirty();
+  if (fmt === 'tiff16') {
+    const buf = PintoraFormats.writeTiff16(E.flatten16(d.layers, d.w, d.h), d.w, d.h);
+    await saveBlob(baseName() + '.tiff', new Blob([buf], { type: 'image/tiff' })); return;
+  }
   if (fmt === 'tiff') {
     const buf = PintoraFormats.writeTiff(E.flattenOn(d.layers, d.w, d.h), d.w, d.h);
     await saveBlob(baseName() + '.tiff', new Blob([buf], { type: 'image/tiff' })); return;
@@ -348,6 +384,43 @@ async function exportImage(fmt, quality, bg, delay) {
   await saveBlob(baseName() + '.' + (fmt === 'jpeg' ? 'jpg' : fmt), blob);
 }
 
+function setDepth(bits) {
+  const d = S.doc; if (!d) return;
+  if (d.setDepth(bits)) { docChanged(); toast(bits === 16 ? 'Documento de 16 bits por canal' : 'Documento de 8 bits por canal'); }
+}
+
+async function convertIccFile(file) {
+  const buffer = await file.arrayBuffer();
+  const profile = ICC.parseProfile(buffer);
+  if (!profile.supported) throw new Error('El perfil ICC usa una transformación LUT no compatible.');
+  const d = S.doc; if (!d) return;
+  d.checkpoint('Convertir perfil ICC');
+  for (const L of d.layers) {
+    if (L.data16) { L.data16 = ICC.convert16(L.data16, L.w, L.h, profile); L.data = E.to8(L.data16); L.depth = d.depth; }
+    else { L.data = ICC.convertRGBA(L.data, L.w, L.h, profile); L.data16 = null; L.depth = 8; }
+  }
+  d.icc = { name: profile.name, converted: true };
+  d.colorSpace = 'sRGB';
+  docChanged();
+  toast('Perfil ICC convertido: ' + profile.name);
+}
+
+function exportSvg() {
+  const d = S.doc; if (!d) return;
+  const parts = [];
+  for (const L of d.layers) {
+    if (!L.visible || L.opacity <= 0) continue;
+    if (L.path && L.path.points && L.path.points.length >= 2) {
+      parts.push('<g transform="translate(' + L.x + ' ' + L.y + ')" opacity="' + L.opacity + '">' + Paths.toSvgElement(L.path) + '</g>');
+    } else {
+      const url = dataToCanvas(L.data, L.w, L.h).toDataURL('image/png');
+      parts.push('<image x="' + L.x + '" y="' + L.y + '" width="' + L.w + '" height="' + L.h + '" opacity="' + L.opacity + '" href="' + url + '"/>');
+    }
+  }
+  const svg = '<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="' + d.w + '" height="' + d.h + '" viewBox="0 0 ' + d.w + ' ' + d.h + '">\n' + parts.join('\n') + '\n</svg>\n';
+  return saveBlob(baseName() + '.svg', new Blob([svg], { type: 'image/svg+xml' }));
+}
+
 /* project file: JSON with PNG layers (v2 adds selection, name and colours) */
 function maskToDataURL(mask, w, h) {
   const data = new Uint8ClampedArray(w * h * 4);
@@ -357,7 +430,8 @@ function maskToDataURL(mask, w, h) {
 function projectData() {
   const d = S.doc, layers = [];
   for (const l of d.layers) {
-    const o = { name: l.name, visible: l.visible, opacity: l.opacity, mode: l.mode, lockAlpha: l.lockAlpha, maskOn: l.maskOn, text: l.text, x: l.x, y: l.y, w: l.w, h: l.h };
+    const o = { name: l.name, visible: l.visible, opacity: l.opacity, mode: l.mode, lockAlpha: l.lockAlpha, maskOn: l.maskOn, text: l.text, path: l.path || null, x: l.x, y: l.y, w: l.w, h: l.h };
+    if (l.data16) o.data16 = bytesToB64(new Uint8Array(l.data16.buffer, l.data16.byteOffset, l.data16.byteLength));
     o.png = dataToCanvas(l.data, l.w, l.h).toDataURL('image/png');
     if (l.mask) {
       const m = new Uint8ClampedArray(l.w * l.h * 4);
@@ -367,7 +441,7 @@ function projectData() {
     layers.push(o);
   }
   return {
-    format: 'pintora', version: 3, w: d.w, h: d.h, active: d.indexOf(d.activeId), name: S.name,
+    format: 'pintora', version: 4, w: d.w, h: d.h, active: d.indexOf(d.activeId), name: S.name, depth: d.depth || 8, icc: d.icc || null,
     fg: { r: S.fg.r, g: S.fg.g, b: S.fg.b }, bg: { r: S.bg.r, g: S.bg.g, b: S.bg.b },
     selection: d.selection ? maskToDataURL(d.selection, d.w, d.h) : null, layers
   };
@@ -385,13 +459,15 @@ async function loadProject(text, name) {
   const p = JSON.parse(text);
   if (p.format !== 'pintora' || !Array.isArray(p.layers) || !p.w || !p.h) throw new Error('No es un proyecto de Pintora');
   if (p.w > MAX_DIM || p.h > MAX_DIM) throw new Error('El proyecto supera el tamaño máximo.');
-  const doc = new E.Doc(p.w, p.h);
+  const doc = new E.Doc(p.w, p.h); doc.depth = p.depth === 16 ? 16 : 8; doc.icc = p.icc || null;
   for (const o of p.layers) {
     const lw = o.w || p.w, lh = o.h || p.h, lx = o.x || 0, ly = o.y || 0;
     if (!(lw >= 1 && lh >= 1) || lw > MAX_DIM || lh > MAX_DIM) throw new Error('Una capa del proyecto tiene un tamaño no válido.');
     const l = E.makeLayer(lw, lh, o.name, null, lx, ly);
     const im = await imageFromURL(o.png), c = document.createElement('canvas'); c.width = lw; c.height = lh;
     const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(im, 0, 0); l.data = g.getImageData(0, 0, lw, lh).data;
+    if (o.data16) { const raw = b64ToBytes(o.data16); l.data16 = new Uint16Array(raw.buffer, raw.byteOffset, raw.byteLength / 2); l.depth = 16; }
+    l.path = o.path || null;
     Object.assign(l, { visible: o.visible !== false, opacity: o.opacity === undefined ? 1 : o.opacity, mode: E.MODES[o.mode] ? o.mode : 'normal', lockAlpha: !!o.lockAlpha, maskOn: o.maskOn !== false, text: o.text || null });
     if (o.mask) { const mi = await imageFromURL(o.mask); g.clearRect(0, 0, lw, lh); g.drawImage(mi, 0, 0); const md = g.getImageData(0, 0, lw, lh).data; l.mask = new Uint8Array(lw * lh); for (let i = 0; i < l.mask.length; i++) l.mask[i] = md[i * 4]; }
     doc.layers.push(l);
@@ -479,6 +555,7 @@ async function openFiles(files, asLayers) {
         await loadProject(await f.text(), f.name); toast('Proyecto abierto: ' + f.name); continue;
       }
       if (/\.psd$/i.test(f.name)) { await openPsd(f, asLayers); continue; }
+      if (/\.xcf$/i.test(f.name)) { await openXcf(f, asLayers); continue; }
       if (/\.tiff?$/i.test(f.name)) { await openTiff(f, asLayers); continue; }
       if (/\.gif$/i.test(f.name)) { await openGif(f, asLayers); continue; }
       const im = await decodeImage(f);
@@ -489,8 +566,9 @@ async function openFiles(files, asLayers) {
 }
 function openAsDocument(im, name) {
   const doc = new E.Doc(im.w, im.h), l = E.makeLayer(im.w, im.h, 'Fondo'); l.data = new Uint8ClampedArray(im.data);
+  if (im.data16) { l.data16 = im.data16; l.depth = 16; doc.depth = 16; }
   doc.layers.push(l); doc.activeId = l.id; setDoc(doc, name.replace(/\.[a-z0-9]+$/i, '')); S.modified = false;
-  toast(name + ' · ' + im.w + '×' + im.h + ' px');
+  toast(name + ' · ' + im.w + '×' + im.h + ' px' + (im.depth === 16 ? ' · 16 bits' : ''));
 }
 async function openPsd(file, asLayers) {
   const psd = PintoraFormats.readPsd(await file.arrayBuffer());
@@ -530,7 +608,9 @@ async function openDecoded(im, name, asLayers) {
   openAsDocument(im, name);
 }
 async function openTiff(file, asLayers) {
-  await openDecoded(PintoraFormats.readTiff(await file.arrayBuffer()), file.name, asLayers);
+  const buffer = await file.arrayBuffer();
+  const deep = PintoraFormats.readTiff16(buffer);
+  await openDecoded(deep && deep.depth === 16 ? deep : PintoraFormats.readTiff(buffer), file.name, asLayers);
 }
 async function openGif(file, asLayers) {
   const gif = PintoraFormats.readGif(await file.arrayBuffer());
@@ -544,6 +624,40 @@ async function savePsd() {
     layers: d.layers.map((l) => ({ name: l.name, data: l.data, opacity: l.opacity, visible: l.visible, mode: l.mode, x: l.x, y: l.y, w: l.w, h: l.h }))
   });
   await saveBlob(baseName() + '.psd', new Blob([buffer], { type: 'image/vnd.adobe.photoshop' }));
+}
+async function openXcf(file, asLayers) {
+  const xcf = await PintoraFormats.readXcf(await file.arrayBuffer(), PintoraLibs.xcf);
+  if (!xcf.w || !xcf.h || xcf.w > MAX_DIM || xcf.h > MAX_DIM) throw new Error('El XCF no tiene un tamaño válido.');
+  const valid = (l) => l.w >= 1 && l.h >= 1 && l.w <= MAX_DIM && l.h <= MAX_DIM;
+  if (asLayers && S.doc) {
+    let n = 0; const d = S.doc;
+    for (const l of xcf.layers) {
+      if (!valid(l)) continue;
+      const L = d.addLayerFromData(l.name, new Uint8ClampedArray(l.data), 'Abrir XCF como capa', l.left || 0, l.top || 0, l.w, l.h);
+      L.opacity = l.opacity; L.visible = l.visible; L.mode = l.mode; n++;
+    }
+    if (!n) { toast('El XCF no tiene capas RGBA válidas.'); return; }
+    docChanged(); return;
+  }
+  if (!(await confirmDiscard())) return;
+  const doc = new E.Doc(xcf.w, xcf.h);
+  for (const l of xcf.layers) {
+    if (!valid(l)) continue;
+    const L = E.makeLayer(l.w, l.h, l.name, null, l.left || 0, l.top || 0);
+    L.data = new Uint8ClampedArray(l.data); L.opacity = l.opacity; L.visible = l.visible; L.mode = l.mode;
+    doc.layers.push(L);
+  }
+  if (!doc.layers.length) throw new Error('El XCF no tiene capas RGBA.');
+  doc.activeId = doc.layers[doc.layers.length - 1].id;
+  setDoc(doc, file.name.replace(/\.xcf$/i, '')); S.modified = false;
+  toast('XCF: ' + doc.layers.length + ' capas · ' + xcf.w + '×' + xcf.h + ' px');
+}
+async function saveXcf() {
+  const d = S.doc; flushDirty();
+  const buffer = PintoraFormats.writeXcf({
+    w: d.w, h: d.h, layers: d.layers.map((l) => ({ name: l.name, data: l.data, opacity: l.opacity, visible: l.visible, mode: l.mode, x: l.x, y: l.y, w: l.w, h: l.h, lockAlpha: l.lockAlpha }))
+  });
+  await saveBlob(baseName() + '.xcf', new Blob([buffer], { type: 'image/x-xcf' }));
 }
 function addImageAsLayer(im, name) {
   const d = S.doc, ox = Math.round((d.w - im.w) / 2), oy = Math.round((d.h - im.h) / 2);

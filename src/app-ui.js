@@ -193,7 +193,7 @@ function refreshHistogram() {
   let sum = 0, count = 0;
   for (let i = 0; i < 256; i++) { sum += i * h.luma[i]; count += h.luma[i]; }
   const mean = count ? (sum / count).toFixed(1) : '—';
-  $('#histLegend').textContent = h.n ? h.n.toLocaleString('es') + ' px con alfa · luminancia media ' + mean : 'Imagen vacía';
+  $('#histLegend').textContent = h.n ? h.n.toLocaleString(PintoraI18n.lang === 'en' ? 'en' : 'es') + ' px con alfa · luminancia media ' + mean : 'Imagen vacía';
 }
 
 /* ---------------- history + status ---------------- */
@@ -239,7 +239,7 @@ function newLayerDialog() {
 }
 function exportDialog() {
   dialog({ title: 'Exportar imagen', fields: [
-    { id: 'fmt', label: 'Formato', type: 'select', options: [['png', 'PNG (sin pérdida, con transparencia)'], ['jpeg', 'JPEG'], ['webp', 'WebP'], ['tiff', 'TIFF (sin pérdida)'], ['gif', 'GIF animado (una capa visible por fotograma)']], value: 'png' },
+    { id: 'fmt', label: 'Formato', type: 'select', options: [['png', 'PNG (sin pérdida, con transparencia)'], ['jpeg', 'JPEG'], ['webp', 'WebP'], ['tiff', 'TIFF 8 bits (sin pérdida)'], ['tiff16', 'TIFF 16 bits (sin pérdida)'], ['gif', 'GIF animado (una capa visible por fotograma)']], value: 'png' },
     { id: 'q', label: 'Calidad', type: 'range', min: 1, max: 100, value: 90 },
     { id: 'bg', label: 'Fondo (JPEG)', type: 'color', value: '#ffffff', note: 'Sustituye la transparencia' },
     { id: 'delay', label: 'Fotograma GIF (ms)', type: 'range', min: 20, max: 1000, step: 10, value: 100, note: 'Solo para GIF animado' }
@@ -366,10 +366,10 @@ function helpDialog() {
 }
 function aboutDialog() {
   dialog({ title: 'Acerca de Pintora', noCancel: true, ok: 'Cerrar', fields: [
-    { type: 'info', text: 'Pintora 0.1.0 es un editor de imágenes independiente para navegador y escritorio. Reúne 21 herramientas, 20 filtros, 35 modos de mezcla, capas con opacidad, máscaras y tamaño y posición propios, selecciones, texto rasterizado e historial con deshacer y rehacer.' },
-    { type: 'info', text: 'Abre y exporta PNG, JPEG, WebP, TIFF, GIF y PSD. Los proyectos .pintora.json v3 conservan las capas, sus límites, máscaras, selección y colores. El autoguardado permite recuperar la sesión anterior al volver a abrir la aplicación.' },
+    { type: 'info', text: 'Pintora 0.1.0 es un editor de imágenes independiente para navegador y escritorio. Reúne 22 herramientas, 20 filtros, 35 modos de mezcla, capas con opacidad, máscaras y tamaño y posición propios, selecciones, texto rasterizado, trazados vectoriales e historial con deshacer y rehacer.' },
+    { type: 'info', text: 'Abre PNG, JPEG, WebP, TIFF de 8 o 16 bits, GIF, PSD y XCF con capas RGBA, y exporta además SVG. Los proyectos .pintora.json v4 conservan capas, límites, máscaras, selección, colores, trazados, perfil ICC y precisión de 16 bits. El autoguardado recupera la sesión anterior al volver a abrir la aplicación.' },
     { type: 'info', text: 'Las fórmulas de los modos de mezcla y la composición por capas siguen el comportamiento del código fuente de GIMP 3 (GPL). Pintora no está afiliado a GIMP ni al proyecto GNOME. Si distribuyes una versión compilada, hazlo bajo GPL-3.0-or-later y ofrece el código fuente.' },
-    { type: 'info', text: 'Todavía no incluye lectura ni escritura de archivos XCF, trazados vectoriales, 16 bits por canal, gestión de color ICC ni selección de idioma en la interfaz.' }
+    { type: 'info', text: 'La interfaz está disponible en español e inglés. La composición y los proyectos conservan 16 bits, pero las herramientas de píxeles, los filtros y las selecciones trabajan sobre el búfer de 8 bits. Los trazados vectoriales se editan y exportan a SVG, y los perfiles ICC RGB con matrices/TRC se convierten a sRGB; los perfiles basados solo en LUT se rechazan para no aplicar una conversión incorrecta.' }
   ] });
 }
 
@@ -417,6 +417,7 @@ const A = {
   flip(hz) { cancelActive(); S.doc.flipImage(hz); docChanged(); },
   zoomIn() { setZoom(S.view.zoom * 1.5); }, zoomOut() { setZoom(S.view.zoom / 1.5); }, zoom100() { setZoom(1); }, fit: fitView,
   copy() { copySelection(false); }, cut() { if (needLayer()) copySelection(true); }, paste() { void pasteSmart(false); }, clear() { if (needLayer()) clearSelection(false); },
+  newPath() { cancelActive(); if (newPathLayer()) { selectTool('path'); docChanged(); } },
   repeatFilter() { if (!S.lastFilter) { toast('Todavía no has aplicado ningún filtro.'); return; } runFilter(S.lastFilter.id, S.lastFilter.vals); }
 };
 
@@ -428,12 +429,12 @@ function filterItems(groups) {
   return out;
 }
 const MENUS = [
-  { label: 'Archivo', build: () => [{ label: 'Nueva imagen…', key: 'Ctrl+N', fn: newImageDialog }, { label: 'Abrir…', key: 'Ctrl+O', fn: () => $('#fileInput').click() }, { label: 'Abrir como capas…', fn: () => { $('#fileInput').dataset.layers = '1'; $('#fileInput').click(); } }, '-', { label: 'Guardar proyecto (.pintora.json)', key: 'Ctrl+S', fn: saveProject }, { label: 'Guardar como PSD…', fn: savePsd }, { label: 'Exportar como imagen…', key: 'Ctrl+E', fn: exportDialog }] },
+  { label: 'Archivo', build: () => [{ label: 'Nueva imagen…', key: 'Ctrl+N', fn: newImageDialog }, { label: 'Abrir…', key: 'Ctrl+O', fn: () => $('#fileInput').click() }, { label: 'Abrir como capas…', fn: () => { $('#fileInput').dataset.layers = '1'; $('#fileInput').click(); } }, '-', { label: 'Guardar proyecto (.pintora.json)', key: 'Ctrl+S', fn: saveProject }, { label: 'Guardar como PSD…', fn: savePsd }, { label: 'Guardar como XCF…', fn: saveXcf }, { label: 'Exportar SVG…', fn: exportSvg }, { label: 'Exportar como imagen…', key: 'Ctrl+E', fn: exportDialog }] },
   { label: 'Edición', build: () => [{ label: 'Deshacer', key: 'Ctrl+Z', fn: doUndo, enabled: () => S.doc.undoStack.length > 0 }, { label: 'Rehacer', key: 'Ctrl+Y', fn: doRedo, enabled: () => S.doc.redoStack.length > 0 }, '-', { label: 'Cortar', key: 'Ctrl+X', fn: A.cut }, { label: 'Copiar', key: 'Ctrl+C', fn: A.copy }, { label: 'Pegar como capa nueva', key: 'Ctrl+V', fn: A.paste, enabled: () => !!S.clip }, { label: 'Borrar', key: 'Supr', fn: A.clear }, '-', { label: 'Rellenar con el color de frente', fn: () => A.fill('fg') }, { label: 'Rellenar con el color de fondo', fn: () => A.fill('bg') }, { label: 'Trazar selección…', fn: A.strokeSel, enabled: hasSel }] },
   { label: 'Selección', build: () => [{ label: 'Todo', key: 'Ctrl+A', fn: A.selAll }, { label: 'Nada', key: 'Ctrl+Mayús+A', fn: A.selNone, enabled: hasSel }, { label: 'Invertir', key: 'Ctrl+I', fn: A.selInvert }, '-', { label: 'Agrandar…', fn: () => amountDialog('Agrandar selección', 'Píxeles', 5, 200, (n) => selOp('Agrandar selección', (m) => E.growMask(m, S.doc.w, S.doc.h, n))), enabled: hasSel }, { label: 'Reducir…', fn: () => amountDialog('Reducir selección', 'Píxeles', 5, 200, (n) => selOp('Reducir selección', (m) => E.shrinkMask(m, S.doc.w, S.doc.h, n))), enabled: hasSel }, { label: 'Difuminar bordes…', fn: () => amountDialog('Difuminar bordes', 'Radio (px)', 10, 200, (n) => selOp('Difuminar selección', (m) => E.featherMask(m, S.doc.w, S.doc.h, n))), enabled: hasSel }, { label: 'Borde…', fn: () => amountDialog('Borde de la selección', 'Grosor (px)', 5, 100, (n) => selOp('Borde de selección', (m) => { const d = S.doc, o = E.growMask(m, d.w, d.h, n), i = E.shrinkMask(m, d.w, d.h, n) || new Uint8Array(d.w * d.h), r = new Uint8Array(d.w * d.h); if (o) for (let k = 0; k < r.length; k++) r[k] = Math.max(0, o[k] - i[k]); return E.normalizeMask(r); })), enabled: hasSel }, '-', { label: 'Transparencia de la capa a selección', fn: A.selAlpha }] },
-  { label: 'Ver', build: () => [{ label: 'Acercar', key: '+', fn: A.zoomIn }, { label: 'Alejar', key: '-', fn: A.zoomOut }, { label: 'Ajustar a la ventana', key: '0', fn: A.fit }, { label: 'Tamaño real (100 %)', key: '1', fn: A.zoom100 }, '-', { label: 'Mostrar selección', check: () => S.showSel, fn: () => { S.showSel = !S.showSel; schedule(); } }, { label: 'Mostrar cuadrícula (con zoom ≥ 300 %)', check: () => S.showGrid, fn: () => { S.showGrid = !S.showGrid; schedule(); } }, '-', { label: 'Tema: sistema', check: () => S.theme === 'system', fn: () => setTheme('system') }, { label: 'Tema: claro', check: () => S.theme === 'light', fn: () => setTheme('light') }, { label: 'Tema: oscuro', check: () => S.theme === 'dark', fn: () => setTheme('dark') }] },
-  { label: 'Imagen', build: () => [{ label: 'Tamaño del lienzo…', fn: canvasSizeDialog }, { label: 'Escalar imagen…', fn: scaleImageDialog }, { label: 'Recortar a la selección', fn: A.cropToSel, enabled: hasSel }, '-', { label: 'Voltear horizontalmente', fn: () => A.flip(true) }, { label: 'Voltear verticalmente', fn: () => A.flip(false) }, { label: 'Girar 90° a la derecha', fn: () => A.rotate(1) }, { label: 'Girar 90° a la izquierda', fn: () => A.rotate(3) }, { label: 'Girar 180°', fn: () => A.rotate(2) }, '-', { label: 'Aplanar imagen', fn: A.flatten, enabled: () => S.doc.layers.length > 1 }] },
-  { label: 'Capa', build: () => [{ label: 'Capa nueva…', key: 'Ctrl+Mayús+N', fn: () => newLayerDialog() }, { label: 'Duplicar capa', key: 'Ctrl+Mayús+D', fn: A.dupLayer }, { label: 'Eliminar capa', fn: A.delLayer }, { label: 'Combinar hacia abajo', fn: A.mergeDown }, '-', { label: 'Subir capa', fn: () => A.moveLayer(1) }, { label: 'Bajar capa', fn: () => A.moveLayer(-1) }, { label: 'Llevar al frente', fn: () => A.layerToEdge(true) }, { label: 'Llevar al fondo', fn: () => A.layerToEdge(false) }, '-', { grp: 'Máscara' }, { label: 'Añadir máscara (blanca)', fn: () => A.addMask('white') }, { label: 'Añadir máscara desde la selección', fn: () => A.addMask('sel'), enabled: hasSel }, { label: 'Añadir máscara desde la transparencia', fn: () => A.addMask('alpha') }, { label: 'Invertir máscara', fn: A.invertMask, enabled: hasLayerMask }, { label: 'Mostrar máscara', check: () => !!(activeLayer() && activeLayer().mask && activeLayer().maskOn !== false), fn: A.toggleMask, enabled: hasLayerMask }, { label: 'Aplicar máscara', fn: A.applyMask, enabled: hasLayerMask }, { label: 'Eliminar máscara', fn: A.delMask, enabled: hasLayerMask }, '-', { grp: 'Transformar' }, { label: 'Voltear capa horizontalmente', fn: () => A.layerFlip(true) }, { label: 'Voltear capa verticalmente', fn: () => A.layerFlip(false) }, { label: 'Girar y escalar…', fn: A.layerTransformDialog }, { label: 'Desplazar…', fn: A.layerOffsetDialog }, '-', { label: 'Editar texto…', fn: A.editText, enabled: isText }] },
+  { label: 'Ver', build: () => [{ label: 'Acercar', key: '+', fn: A.zoomIn }, { label: 'Alejar', key: '-', fn: A.zoomOut }, { label: 'Ajustar a la ventana', key: '0', fn: A.fit }, { label: 'Tamaño real (100 %)', key: '1', fn: A.zoom100 }, '-', { label: 'Mostrar selección', check: () => S.showSel, fn: () => { S.showSel = !S.showSel; schedule(); } }, { label: 'Mostrar cuadrícula (con zoom ≥ 300 %)', check: () => S.showGrid, fn: () => { S.showGrid = !S.showGrid; schedule(); } }, '-', { label: 'Tema: sistema', check: () => S.theme === 'system', fn: () => setTheme('system') }, { label: 'Tema: claro', check: () => S.theme === 'light', fn: () => setTheme('light') }, { label: 'Tema: oscuro', check: () => S.theme === 'dark', fn: () => setTheme('dark') }, '-', { label: 'Idioma: Español', check: () => S.lang === 'es', fn: () => setLang('es') }, { label: 'Idioma: English', check: () => S.lang === 'en', fn: () => setLang('en') }] },
+  { label: 'Imagen', build: () => [{ label: 'Tamaño del lienzo…', fn: canvasSizeDialog }, { label: 'Escalar imagen…', fn: scaleImageDialog }, { label: 'Recortar a la selección', fn: A.cropToSel, enabled: hasSel }, '-', { label: 'Profundidad: 8 bits', check: () => S.doc.depth !== 16, fn: () => setDepth(8) }, { label: 'Profundidad: 16 bits', check: () => S.doc.depth === 16, fn: () => setDepth(16) }, { label: 'Convertir perfil ICC a sRGB…', fn: () => $('#iccInput').click() }, '-', { label: 'Voltear horizontalmente', fn: () => A.flip(true) }, { label: 'Voltear verticalmente', fn: () => A.flip(false) }, { label: 'Girar 90° a la derecha', fn: () => A.rotate(1) }, { label: 'Girar 90° a la izquierda', fn: () => A.rotate(3) }, { label: 'Girar 180°', fn: () => A.rotate(2) }, '-', { label: 'Aplanar imagen', fn: A.flatten, enabled: () => S.doc.layers.length > 1 }] },
+  { label: 'Capa', build: () => [{ label: 'Capa nueva…', key: 'Ctrl+Mayús+N', fn: () => newLayerDialog() }, { label: 'Nuevo trazado', fn: A.newPath }, { label: 'Duplicar capa', key: 'Ctrl+Mayús+D', fn: A.dupLayer }, { label: 'Eliminar capa', fn: A.delLayer }, { label: 'Combinar hacia abajo', fn: A.mergeDown }, '-', { label: 'Subir capa', fn: () => A.moveLayer(1) }, { label: 'Bajar capa', fn: () => A.moveLayer(-1) }, { label: 'Llevar al frente', fn: () => A.layerToEdge(true) }, { label: 'Llevar al fondo', fn: () => A.layerToEdge(false) }, '-', { grp: 'Máscara' }, { label: 'Añadir máscara (blanca)', fn: () => A.addMask('white') }, { label: 'Añadir máscara desde la selección', fn: () => A.addMask('sel'), enabled: hasSel }, { label: 'Añadir máscara desde la transparencia', fn: () => A.addMask('alpha') }, { label: 'Invertir máscara', fn: A.invertMask, enabled: hasLayerMask }, { label: 'Mostrar máscara', check: () => !!(activeLayer() && activeLayer().mask && activeLayer().maskOn !== false), fn: A.toggleMask, enabled: hasLayerMask }, { label: 'Aplicar máscara', fn: A.applyMask, enabled: hasLayerMask }, { label: 'Eliminar máscara', fn: A.delMask, enabled: hasLayerMask }, '-', { grp: 'Transformar' }, { label: 'Voltear capa horizontalmente', fn: () => A.layerFlip(true) }, { label: 'Voltear capa verticalmente', fn: () => A.layerFlip(false) }, { label: 'Girar y escalar…', fn: A.layerTransformDialog }, { label: 'Desplazar…', fn: A.layerOffsetDialog }, '-', { label: 'Editar texto…', fn: A.editText, enabled: isText }] },
   { label: 'Colores', build: () => filterItems(['Colores']) },
   { label: 'Filtros', build: () => filterItems(['Desenfoque', 'Mejora', 'Distorsión', 'Luz y sombra']).concat(['-', { label: 'Repetir último filtro', key: 'Ctrl+F', fn: A.repeatFilter }]) },
   { label: 'Ayuda', build: () => [{ label: 'Atajos de teclado', fn: helpDialog }, { label: 'Acerca de Pintora', fn: aboutDialog }] }
@@ -451,7 +452,7 @@ function openMenu(btn, def) {
   $('#menuHost').append(panel); const r = btn.getBoundingClientRect(); panel.style.top = r.bottom + 4 + 'px'; panel.style.left = Math.max(8, Math.min(r.left, innerWidth - panel.offsetWidth - 8)) + 'px';
 }
 function setupMenus() {
-  const nav = $('#menus');
+  const nav = $('#menus'); nav.textContent = '';
   for (const def of MENUS) { const b = h('button', { class: 'menubtn', text: def.label, 'aria-haspopup': 'true' }); b.addEventListener('click', (e) => { e.stopPropagation(); if (openMenuBtn === b) closeMenu(); else openMenu(b, def); }); b.addEventListener('pointerenter', () => { if (openMenuBtn && openMenuBtn !== b) openMenu(b, def); }); nav.append(b); }
   document.addEventListener('pointerdown', (e) => { if (openMenuBtn && !e.target.closest('.menu') && !e.target.closest('.menubtn')) closeMenu(); });
 }
@@ -462,6 +463,13 @@ function setTheme(t) {
   try { localStorage.setItem('pintora-theme', t); } catch (e) { /* ignore */ }
   const b = $('#btnTheme'); b.textContent = ''; b.append(icon(t === 'system' ? 'auto' : t === 'light' ? 'sun' : 'moon')); b.title = 'Tema: ' + (t === 'system' ? 'sistema' : t === 'light' ? 'claro' : 'oscuro');
   drawSV(); schedule();
+}
+
+/* ---------------- language ---------------- */
+function setLang(lang) {
+  S.lang = PintoraI18n.setLanguage(lang);
+  setupMenus(); refreshAll(); refreshToolbox(); refreshOptions(); refreshColor(); schedule();
+  PintoraI18n.apply();
 }
 
 /* ---------------- keyboard ---------------- */
@@ -497,6 +505,7 @@ function setupKeys() {
 /* ---------------- boot ---------------- */
 function boot() {
   if (/Electron/i.test(navigator.userAgent)) document.documentElement.classList.add('native');
+  S.lang = PintoraI18n.init();
   let saved = 'system'; try { saved = localStorage.getItem('pintora-theme') || 'system'; } catch (e) { /* ignore */ }
   const put = (id, name) => { const b = $(id); b.textContent = ''; b.append(icon(name)); };
   put('#btnUndo', 'undo'); put('#btnRedo', 'redo'); put('#btnDocks', 'layers'); put('#btnSwap', 'swap'); put('#btnDefColors', 'reset');
@@ -507,6 +516,7 @@ function boot() {
   const zs = $('#zoomSel'); for (const z of [0.0625, 0.125, 0.25, 0.5, 1, 2, 4, 8, 16]) zs.append(h('option', { value: z, text: z * 100 + '%' })); zs.append(h('option', { value: 'fit', text: 'Ajustar' }));
   zs.addEventListener('change', () => { if (zs.value === 'fit') fitView(); else setZoom(parseFloat(zs.value)); });
   const fi = $('#fileInput'); fi.addEventListener('change', () => { const asLayers = fi.dataset.layers === '1'; fi.dataset.layers = ''; openFiles(fi.files, asLayers); fi.value = ''; });
+  const ci = $('#iccInput'); ci.addEventListener('change', async () => { const f = ci.files && ci.files[0]; ci.value = ''; if (!f) return; try { await convertIccFile(f); } catch (e) { toast(e.message || 'No se pudo aplicar el perfil ICC.'); } });
   const stage = $('#stage'), veil = $('#dropveil'); let dragN = 0;
   stage.addEventListener('dragenter', (e) => { e.preventDefault(); dragN++; veil.classList.add('on'); }); stage.addEventListener('dragleave', () => { if (--dragN <= 0) { dragN = 0; veil.classList.remove('on'); } });
   stage.addEventListener('dragover', (e) => e.preventDefault()); stage.addEventListener('drop', (e) => { e.preventDefault(); dragN = 0; veil.classList.remove('on'); if (e.dataTransfer.files.length) openFiles(e.dataTransfer.files, e.shiftKey); });
@@ -517,9 +527,9 @@ function boot() {
   void checkAutosave();
   window.__pintora = {
     S, E, A, TOOL_IMPL, selectTool, setDoc, docChanged, runFilter,
-    F: PintoraFormats, flushDirty, exportImage, projectData, loadProject, saveProject, savePsd,
-    openFiles, addImageAsLayer, pasteClip, copySelection, clearSelection, openTextDialog,
-    buildSample, refreshAll, resizeBuffers, setTheme
+    F: PintoraFormats, Paths, ICC, flushDirty, exportImage, exportSvg, projectData, loadProject, saveProject, savePsd, saveXcf,
+    openFiles, addImageAsLayer, pasteClip, copySelection, clearSelection, openTextDialog, convertIccFile, setDepth, newPathLayer,
+    buildSample, refreshAll, resizeBuffers, setTheme, setLang
   };
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();

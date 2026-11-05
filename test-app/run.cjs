@@ -103,6 +103,7 @@ async function inspectSaved(file, kind) {
     const buffer = bytes.buffer;
     if (${JSON.stringify(kind)} === 'tiff') { const t = P.F.readTiff(buffer); return { w: t.w, h: t.h }; }
     if (${JSON.stringify(kind)} === 'gif') { const g = P.F.readGif(buffer); return { w: g.w, h: g.h, frames: g.frames }; }
+    if (${JSON.stringify(kind)} === 'xcf') { const x = await P.F.readXcf(buffer); return { w: x.w, h: x.h, layers: x.layers.length }; }
     const p = P.F.readPsd(buffer);
     return { w: p.w, h: p.h, layers: p.layers.length };
   })()`);
@@ -161,7 +162,7 @@ async function main() {
     check(win.isVisible() === false, 'La ventana de prueba debe permanecer oculta');
   });
 
-  await test('descargas reales: PNG, JPEG, WebP, TIFF, GIF, proyecto y PSD al disco', async () => {
+  await test('descargas reales: PNG, JPEG, WebP, TIFF, GIF, XCF, proyecto y PSD al disco', async () => {
     await evalPage(`(() => {
       const P = window.__pintora;
       const d = new P.E.Doc(12, 8);
@@ -180,6 +181,8 @@ async function main() {
     await waitDownload('Ejecutable.pintora.json');
     await evalPage('window.__pintora.savePsd()');
     await waitDownload('Ejecutable.psd');
+    await evalPage('window.__pintora.saveXcf()');
+    await waitDownload('Ejecutable.xcf');
 
     const png = fs.readFileSync(path.join(downloadDir, 'Ejecutable.png'));
     const jpg = fs.readFileSync(path.join(downloadDir, 'Ejecutable.jpg'));
@@ -188,24 +191,28 @@ async function main() {
     const gif = fs.readFileSync(path.join(downloadDir, 'Ejecutable.gif'));
     const project = JSON.parse(fs.readFileSync(path.join(downloadDir, 'Ejecutable.pintora.json'), 'utf8'));
     const psd = fs.readFileSync(path.join(downloadDir, 'Ejecutable.psd'));
+    const xcf = fs.readFileSync(path.join(downloadDir, 'Ejecutable.xcf'));
 
     check(png.slice(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])), 'El archivo PNG no tiene firma válida');
     check(jpg[0] === 0xFF && jpg[1] === 0xD8, 'El archivo JPEG no tiene firma válida');
     check(webp.slice(0, 4).toString() === 'RIFF' && webp.slice(8, 12).toString() === 'WEBP', 'El archivo WebP no tiene firma válida');
     check(tiff.slice(0, 2).toString() === 'II' || tiff.slice(0, 2).toString() === 'MM', 'El archivo TIFF no tiene firma válida');
     check(gif.slice(0, 3).toString() === 'GIF', 'El archivo GIF no tiene firma válida');
-    check(project.format === 'pintora' && project.version === 3 && project.w === 12 && project.h === 8, 'El proyecto descargado no es v3 de 12×8');
+    check(project.format === 'pintora' && project.version === 4 && project.w === 12 && project.h === 8, 'El proyecto descargado no es v4 de 12×8');
     check(psd.slice(0, 4).toString() === '8BPS', 'El PSD descargado no tiene cabecera 8BPS');
+    check(xcf.slice(0, 8).toString() === 'gimp xcf', 'El XCF descargado no tiene cabecera válida');
     const t = await inspectSaved(path.join(downloadDir, 'Ejecutable.tiff'), 'tiff');
     const g = await inspectSaved(path.join(downloadDir, 'Ejecutable.gif'), 'gif');
     const p = await inspectSaved(path.join(downloadDir, 'Ejecutable.psd'), 'psd');
+    const x = await inspectSaved(path.join(downloadDir, 'Ejecutable.xcf'), 'xcf');
     check(t.w === 12 && t.h === 8, 'El TIFF real no mide 12×8');
     check(g.w === 12 && g.h === 8, 'El GIF real no mide 12×8');
     check(p.w === 12 && p.h === 8 && p.layers >= 1, 'El PSD real no conserva tamaño y capas');
+    check(x.w === 12 && x.h === 8 && x.layers >= 1, 'El XCF real no conserva tamaño y capas');
     check(fs.statSync(path.join(downloadDir, 'Ejecutable.pintora.json')).size > 100, 'El proyecto descargado está vacío');
   });
 
-  await test('apertura desde disco: PNG, proyecto v3, PSD, TIFF y GIF reales', async () => {
+  await test('apertura desde disco: PNG, proyecto v4, PSD, TIFF, GIF y XCF reales', async () => {
     const png = await openFileOnDisk(path.join(downloadDir, 'Ejecutable.png'), 'Ejecutable.png', 'image/png', false);
     check(png.w === 12 && png.h === 8 && png.layers === 1, 'Abrir PNG real no restauró el documento');
     const project = await openFileOnDisk(path.join(downloadDir, 'Ejecutable.pintora.json'), 'Ejecutable.pintora.json', 'application/json', false);
@@ -216,6 +223,8 @@ async function main() {
     check(tiff.w === 12 && tiff.h === 8 && tiff.layers === 1, 'Abrir TIFF real no restauró el documento');
     const gif = await openFileOnDisk(path.join(downloadDir, 'Ejecutable.gif'), 'Ejecutable.gif', 'image/gif', false);
     check(gif.w === 12 && gif.h === 8 && gif.layers === 1, 'Abrir GIF real no restauró el documento');
+    const xcf = await openFileOnDisk(path.join(downloadDir, 'Ejecutable.xcf'), 'Ejecutable.xcf', 'image/x-xcf', false);
+    check(xcf.w === 12 && xcf.h === 8 && xcf.layers >= 1, 'Abrir XCF real no restauró el documento');
     const before = await evalPage('window.__pintora.S.doc.layers.length');
     const asLayer = await openFileOnDisk(path.join(downloadDir, 'Ejecutable.png'), 'Ejecutable.png', 'image/png', true);
     check(asLayer.layers === before + 1, 'Abrir PNG real como capa no añadió la capa');

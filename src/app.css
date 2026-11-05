@@ -23,7 +23,7 @@
   color-scheme: dark;
 }
 html, body { height: 100%; }
-body { background: var(--bg); color: var(--text); font: 13px/1.35 var(--font-ui); overflow: hidden; -webkit-user-select: none; user-select: none; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 13px/1.35 var(--font-ui); overflow: hidden; -webkit-user-select: none; user-select: none; }
 * { box-sizing: border-box; }
 button, select, input, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
