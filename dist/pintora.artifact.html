@@ -1863,6 +1863,44 @@ function confirmDiscard() {
 }
 
 /* ---------------- clipboard ---------------- */
+let pasteKeyAt = 0;
+function clipBlob(clip) {
+  return new Promise((res) => dataToCanvas(clip.data, clip.w, clip.h).toBlob(res, 'image/png'));
+}
+/** Copy the internal clip to the system clipboard so other apps can paste it. */
+async function writeClipToSystem(clip) {
+  try {
+    if (!navigator.clipboard || typeof ClipboardItem === 'undefined' || !navigator.clipboard.write) return false;
+    const blob = await clipBlob(clip);
+    if (!blob) return false;
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    return true;
+  } catch (e) { return false; }
+}
+/** Read an image from the system clipboard and add it as a new layer. */
+async function pasteImageFromSystem() {
+  try {
+    if (!navigator.clipboard || !navigator.clipboard.read) return false;
+    const items = await navigator.clipboard.read();
+    for (const item of items) {
+      const type = item.types.find((t) => t.startsWith('image/'));
+      if (!type) continue;
+      const blob = await item.getType(type);
+      const im = await decodeImage(new File([blob], 'pegado.png', { type }));
+      if (!S.doc) return false;
+      addImageAsLayer(im, 'Pegado');
+      return true;
+    }
+  } catch (e) { /* permiso denegado o API no disponible */ }
+  return false;
+}
+/** Internal clip first, then the system clipboard (or the reverse with forceSystem). */
+async function pasteSmart(forceSystem) {
+  if (!forceSystem && S.clip) { pasteClip(); return true; }
+  if (await pasteImageFromSystem()) return true;
+  if (S.clip) { pasteClip(); return true; }
+  return false;
+}
 function copySelection(cut) {
   const d = S.doc, L = d.active; if (!L) return false;
   const sel = d.selection, b = sel ? E.maskBounds(sel, d.w, d.h) : { x0: 0, y0: 0, x1: d.w, y1: d.h };
@@ -1873,6 +1911,7 @@ function copySelection(cut) {
     out[di] = L.data[si]; out[di + 1] = L.data[si + 1]; out[di + 2] = L.data[si + 2]; out[di + 3] = L.data[si + 3] * m;
   }
   S.clip = { w, h: hh, x: b.x0, y: b.y0, data: out };
+  void writeClipToSystem(S.clip);
   if (cut) clearSelection(true);
   toast(cut ? 'Cortado' : 'Copiado'); return true;
 }
@@ -1892,10 +1931,13 @@ function pasteClip(clip, asNew) {
 }
 document.addEventListener('paste', async (e) => {
   if (e.target && /input|textarea/i.test(e.target.tagName)) return;
+  if (performance.now() - pasteKeyAt < 600) { e.preventDefault(); return; } // Ctrl+V ya lo resolvió
   const items = e.clipboardData ? Array.from(e.clipboardData.items) : [];
   const img = items.find((i) => i.type.startsWith('image/'));
-  if (img && S.doc) { e.preventDefault(); try { const im = await decodeImage(img.getAsFile()); addImageAsLayer(im, 'Pegado'); } catch (err) { toast(err.message); } }
-  else if (S.clip && S.doc) { e.preventDefault(); pasteClip(); }
+  if (!S.doc) return;
+  if (img) { e.preventDefault(); try { const im = await decodeImage(img.getAsFile()); addImageAsLayer(im, 'Pegado'); } catch (err) { toast(err.message); } }
+  else if (S.clip) { e.preventDefault(); pasteClip(); }
+  else if (await pasteImageFromSystem()) e.preventDefault();
 });
 
 /* ---------------- text rasteriser ---------------- */
@@ -2657,7 +2699,7 @@ function openTextDialog(pos, existing) {
     onInput: (v) => render(v), onOk: () => docChanged(), onCancel: () => { d.undo(); d.redoStack.pop(); afterHistory(); } });
 }
 function helpDialog() {
-  const rows = [['R · E · F · U', 'Selección rectangular, elíptica, libre, varita mágica'], ['Mayús+O', 'Selección por color'], ['M · Mayús+C', 'Mover · recortar'], ['N · P · Mayús+E · A', 'Lápiz · pincel · borrador · aerógrafo'], ['C · Mayús+D', 'Clonar · sobreexponer/subexponer'], ['Mayús+B · G · O · T', 'Cubo · degradado · cuentagotas · texto'], ['Z · H · Espacio', 'Zoom · mano · desplazar temporalmente'], ['[ · ]', 'Reducir / aumentar el pincel'], ['X · D', 'Intercambiar colores · negro y blanco'], ['Ctrl+Z · Ctrl+Y', 'Deshacer · rehacer'], ['Ctrl+A · Ctrl+Mayús+A · Ctrl+I', 'Seleccionar todo · nada · invertir'], ['Ctrl+C · Ctrl+X · Ctrl+V', 'Copiar · cortar · pegar como capa'], ['Supr', 'Borrar la selección'], ['Ctrl+Mayús+N', 'Capa nueva'], ['Ctrl+F', 'Repetir el último filtro'], ['Ctrl+rueda · rueda', 'Zoom · desplazar'], ['1 · 2 · 0', 'Zoom 100 % · 200 % · ajustar'], ['Ctrl+S · Ctrl+E', 'Guardar proyecto · exportar']];
+  const rows = [['R · E · F · U', 'Selección rectangular, elíptica, libre, varita mágica'], ['Mayús+O', 'Selección por color'], ['M · Mayús+C', 'Mover · recortar'], ['N · P · Mayús+E · A', 'Lápiz · pincel · borrador · aerógrafo'], ['C · Mayús+D', 'Clonar · sobreexponer/subexponer'], ['Mayús+B · G · O · T', 'Cubo · degradado · cuentagotas · texto'], ['Z · H · Espacio', 'Zoom · mano · desplazar temporalmente'], ['[ · ]', 'Reducir / aumentar el pincel'], ['X · D', 'Intercambiar colores · negro y blanco'], ['Ctrl+Z · Ctrl+Y', 'Deshacer · rehacer'], ['Ctrl+A · Ctrl+Mayús+A · Ctrl+I', 'Seleccionar todo · nada · invertir'], ['Ctrl+C · Ctrl+X · Ctrl+V', 'Copiar · cortar · pegar como capa (Mayús fuerza el portapapeles del sistema)'], ['Supr', 'Borrar la selección'], ['Ctrl+Mayús+N', 'Capa nueva'], ['Ctrl+F', 'Repetir el último filtro'], ['Ctrl+rueda · rueda', 'Zoom · desplazar'], ['1 · 2 · 0', 'Zoom 100 % · 200 % · ajustar'], ['Ctrl+S · Ctrl+E', 'Guardar proyecto · exportar']];
   dialog({ title: 'Atajos de teclado', wide: true, noCancel: true, ok: 'Cerrar', fields: [], node: h('table', { class: 'kbdtable' }, rows.map(([k, t]) => h('tr', null, h('td', { text: k }), h('td', { text: t })))) });
 }
 function aboutDialog() {
@@ -2707,7 +2749,7 @@ const A = {
   rotate(q) { cancelActive(); S.doc.rotateImage(q); docChanged(); fitView(); },
   flip(hz) { cancelActive(); S.doc.flipImage(hz); docChanged(); },
   zoomIn() { setZoom(S.view.zoom * 1.5); }, zoomOut() { setZoom(S.view.zoom / 1.5); }, zoom100() { setZoom(1); }, fit: fitView,
-  copy() { copySelection(false); }, cut() { if (needLayer()) copySelection(true); }, paste() { pasteClip(); }, clear() { if (needLayer()) clearSelection(false); },
+  copy() { copySelection(false); }, cut() { if (needLayer()) copySelection(true); }, paste() { void pasteSmart(false); }, clear() { if (needLayer()) clearSelection(false); },
   repeatFilter() { if (!S.lastFilter) { toast('Todavía no has aplicado ningún filtro.'); return; } runFilter(S.lastFilter.id, S.lastFilter.vals); }
 };
 
@@ -2765,8 +2807,13 @@ function setupKeys() {
     if (k === ' ' && !ctrl) { if (!S.spaceDown) { S.spaceDown = true; viewEl().style.cursor = 'grab'; schedule(); } e.preventDefault(); return; }
     const t = TOOL_IMPL[S.tool]; if (t && t.key && t.key(e)) { e.preventDefault(); return; }
     if (ctrl) {
+      if (lk === 'v') {
+        e.preventDefault(); pasteKeyAt = performance.now();
+        pasteSmart(e.shiftKey).then((ok) => { if (!ok) toast('El portapapeles está vacío.'); });
+        return;
+      }
       const map = { z: () => (e.shiftKey ? doRedo() : doUndo()), y: doRedo, a: () => (e.shiftKey ? A.selNone() : A.selAll()), i: A.selInvert, c: A.copy, x: A.cut, n: () => (e.shiftKey ? newLayerDialog() : newImageDialog()), o: () => $('#fileInput').click(), s: saveProject, e: exportDialog, f: A.repeatFilter, d: () => { if (e.shiftKey) A.dupLayer(); else return false; }, j: () => { if (e.shiftKey) A.fit(); else return false; } };
-      if (map[lk]) { if (lk === 'v') return; const r = map[lk](); if (r !== false) e.preventDefault(); } return;
+      if (map[lk]) { const r = map[lk](); if (r !== false) e.preventDefault(); } return;
     }
     if (e.altKey) return;
     if (k === 'Delete' || k === 'Backspace') { e.preventDefault(); A.clear(); return; }

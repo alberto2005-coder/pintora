@@ -376,6 +376,44 @@ function confirmDiscard() {
 }
 
 /* ---------------- clipboard ---------------- */
+let pasteKeyAt = 0;
+function clipBlob(clip) {
+  return new Promise((res) => dataToCanvas(clip.data, clip.w, clip.h).toBlob(res, 'image/png'));
+}
+/** Copy the internal clip to the system clipboard so other apps can paste it. */
+async function writeClipToSystem(clip) {
+  try {
+    if (!navigator.clipboard || typeof ClipboardItem === 'undefined' || !navigator.clipboard.write) return false;
+    const blob = await clipBlob(clip);
+    if (!blob) return false;
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    return true;
+  } catch (e) { return false; }
+}
+/** Read an image from the system clipboard and add it as a new layer. */
+async function pasteImageFromSystem() {
+  try {
+    if (!navigator.clipboard || !navigator.clipboard.read) return false;
+    const items = await navigator.clipboard.read();
+    for (const item of items) {
+      const type = item.types.find((t) => t.startsWith('image/'));
+      if (!type) continue;
+      const blob = await item.getType(type);
+      const im = await decodeImage(new File([blob], 'pegado.png', { type }));
+      if (!S.doc) return false;
+      addImageAsLayer(im, 'Pegado');
+      return true;
+    }
+  } catch (e) { /* permiso denegado o API no disponible */ }
+  return false;
+}
+/** Internal clip first, then the system clipboard (or the reverse with forceSystem). */
+async function pasteSmart(forceSystem) {
+  if (!forceSystem && S.clip) { pasteClip(); return true; }
+  if (await pasteImageFromSystem()) return true;
+  if (S.clip) { pasteClip(); return true; }
+  return false;
+}
 function copySelection(cut) {
   const d = S.doc, L = d.active; if (!L) return false;
   const sel = d.selection, b = sel ? E.maskBounds(sel, d.w, d.h) : { x0: 0, y0: 0, x1: d.w, y1: d.h };
@@ -386,6 +424,7 @@ function copySelection(cut) {
     out[di] = L.data[si]; out[di + 1] = L.data[si + 1]; out[di + 2] = L.data[si + 2]; out[di + 3] = L.data[si + 3] * m;
   }
   S.clip = { w, h: hh, x: b.x0, y: b.y0, data: out };
+  void writeClipToSystem(S.clip);
   if (cut) clearSelection(true);
   toast(cut ? 'Cortado' : 'Copiado'); return true;
 }
@@ -405,10 +444,13 @@ function pasteClip(clip, asNew) {
 }
 document.addEventListener('paste', async (e) => {
   if (e.target && /input|textarea/i.test(e.target.tagName)) return;
+  if (performance.now() - pasteKeyAt < 600) { e.preventDefault(); return; } // Ctrl+V ya lo resolvió
   const items = e.clipboardData ? Array.from(e.clipboardData.items) : [];
   const img = items.find((i) => i.type.startsWith('image/'));
-  if (img && S.doc) { e.preventDefault(); try { const im = await decodeImage(img.getAsFile()); addImageAsLayer(im, 'Pegado'); } catch (err) { toast(err.message); } }
-  else if (S.clip && S.doc) { e.preventDefault(); pasteClip(); }
+  if (!S.doc) return;
+  if (img) { e.preventDefault(); try { const im = await decodeImage(img.getAsFile()); addImageAsLayer(im, 'Pegado'); } catch (err) { toast(err.message); } }
+  else if (S.clip) { e.preventDefault(); pasteClip(); }
+  else if (await pasteImageFromSystem()) e.preventDefault();
 });
 
 /* ---------------- text rasteriser ---------------- */

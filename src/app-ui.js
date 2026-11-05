@@ -246,7 +246,7 @@ function openTextDialog(pos, existing) {
     onInput: (v) => render(v), onOk: () => docChanged(), onCancel: () => { d.undo(); d.redoStack.pop(); afterHistory(); } });
 }
 function helpDialog() {
-  const rows = [['R · E · F · U', 'Selección rectangular, elíptica, libre, varita mágica'], ['Mayús+O', 'Selección por color'], ['M · Mayús+C', 'Mover · recortar'], ['N · P · Mayús+E · A', 'Lápiz · pincel · borrador · aerógrafo'], ['C · Mayús+D', 'Clonar · sobreexponer/subexponer'], ['Mayús+B · G · O · T', 'Cubo · degradado · cuentagotas · texto'], ['Z · H · Espacio', 'Zoom · mano · desplazar temporalmente'], ['[ · ]', 'Reducir / aumentar el pincel'], ['X · D', 'Intercambiar colores · negro y blanco'], ['Ctrl+Z · Ctrl+Y', 'Deshacer · rehacer'], ['Ctrl+A · Ctrl+Mayús+A · Ctrl+I', 'Seleccionar todo · nada · invertir'], ['Ctrl+C · Ctrl+X · Ctrl+V', 'Copiar · cortar · pegar como capa'], ['Supr', 'Borrar la selección'], ['Ctrl+Mayús+N', 'Capa nueva'], ['Ctrl+F', 'Repetir el último filtro'], ['Ctrl+rueda · rueda', 'Zoom · desplazar'], ['1 · 2 · 0', 'Zoom 100 % · 200 % · ajustar'], ['Ctrl+S · Ctrl+E', 'Guardar proyecto · exportar']];
+  const rows = [['R · E · F · U', 'Selección rectangular, elíptica, libre, varita mágica'], ['Mayús+O', 'Selección por color'], ['M · Mayús+C', 'Mover · recortar'], ['N · P · Mayús+E · A', 'Lápiz · pincel · borrador · aerógrafo'], ['C · Mayús+D', 'Clonar · sobreexponer/subexponer'], ['Mayús+B · G · O · T', 'Cubo · degradado · cuentagotas · texto'], ['Z · H · Espacio', 'Zoom · mano · desplazar temporalmente'], ['[ · ]', 'Reducir / aumentar el pincel'], ['X · D', 'Intercambiar colores · negro y blanco'], ['Ctrl+Z · Ctrl+Y', 'Deshacer · rehacer'], ['Ctrl+A · Ctrl+Mayús+A · Ctrl+I', 'Seleccionar todo · nada · invertir'], ['Ctrl+C · Ctrl+X · Ctrl+V', 'Copiar · cortar · pegar como capa (Mayús fuerza el portapapeles del sistema)'], ['Supr', 'Borrar la selección'], ['Ctrl+Mayús+N', 'Capa nueva'], ['Ctrl+F', 'Repetir el último filtro'], ['Ctrl+rueda · rueda', 'Zoom · desplazar'], ['1 · 2 · 0', 'Zoom 100 % · 200 % · ajustar'], ['Ctrl+S · Ctrl+E', 'Guardar proyecto · exportar']];
   dialog({ title: 'Atajos de teclado', wide: true, noCancel: true, ok: 'Cerrar', fields: [], node: h('table', { class: 'kbdtable' }, rows.map(([k, t]) => h('tr', null, h('td', { text: k }), h('td', { text: t })))) });
 }
 function aboutDialog() {
@@ -296,7 +296,7 @@ const A = {
   rotate(q) { cancelActive(); S.doc.rotateImage(q); docChanged(); fitView(); },
   flip(hz) { cancelActive(); S.doc.flipImage(hz); docChanged(); },
   zoomIn() { setZoom(S.view.zoom * 1.5); }, zoomOut() { setZoom(S.view.zoom / 1.5); }, zoom100() { setZoom(1); }, fit: fitView,
-  copy() { copySelection(false); }, cut() { if (needLayer()) copySelection(true); }, paste() { pasteClip(); }, clear() { if (needLayer()) clearSelection(false); },
+  copy() { copySelection(false); }, cut() { if (needLayer()) copySelection(true); }, paste() { void pasteSmart(false); }, clear() { if (needLayer()) clearSelection(false); },
   repeatFilter() { if (!S.lastFilter) { toast('Todavía no has aplicado ningún filtro.'); return; } runFilter(S.lastFilter.id, S.lastFilter.vals); }
 };
 
@@ -354,8 +354,13 @@ function setupKeys() {
     if (k === ' ' && !ctrl) { if (!S.spaceDown) { S.spaceDown = true; viewEl().style.cursor = 'grab'; schedule(); } e.preventDefault(); return; }
     const t = TOOL_IMPL[S.tool]; if (t && t.key && t.key(e)) { e.preventDefault(); return; }
     if (ctrl) {
+      if (lk === 'v') {
+        e.preventDefault(); pasteKeyAt = performance.now();
+        pasteSmart(e.shiftKey).then((ok) => { if (!ok) toast('El portapapeles está vacío.'); });
+        return;
+      }
       const map = { z: () => (e.shiftKey ? doRedo() : doUndo()), y: doRedo, a: () => (e.shiftKey ? A.selNone() : A.selAll()), i: A.selInvert, c: A.copy, x: A.cut, n: () => (e.shiftKey ? newLayerDialog() : newImageDialog()), o: () => $('#fileInput').click(), s: saveProject, e: exportDialog, f: A.repeatFilter, d: () => { if (e.shiftKey) A.dupLayer(); else return false; }, j: () => { if (e.shiftKey) A.fit(); else return false; } };
-      if (map[lk]) { if (lk === 'v') return; const r = map[lk](); if (r !== false) e.preventDefault(); } return;
+      if (map[lk]) { const r = map[lk](); if (r !== false) e.preventDefault(); } return;
     }
     if (e.altKey) return;
     if (k === 'Delete' || k === 'Backspace') { e.preventDefault(); A.clear(); return; }
