@@ -185,9 +185,10 @@
   }
 
   /* XCF ------------------------------------------------------------------
-   * Pintora writes XCF v001 (32-bit offsets, 8-bit RGBA, RLE tiles). The
-   * reader uses the maintained xcfreader package and converts any supported
-   * precision to the editor's 8-bit working space. */
+   * Pintora writes XCF v001 (32-bit offsets, 8-bit RGBA, RLE tiles) for 8-bit
+   * documents and v011 (64-bit offsets, 16-bit RGBA, U16_GAMMA precision) for
+   * 16-bit documents. The reader uses the maintained xcfreader package and
+   * converts any supported precision to the editor's 8-bit working space. */
   const TO_XCF_MODE = {
     normal: 0, dissolve: 1, behind: 2, multiply: 3, screen: 4, overlay: 5, difference: 6,
     addition: 7, subtract: 8, darken_only: 9, lighten_only: 10, hsv_hue: 11,

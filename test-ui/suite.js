@@ -832,7 +832,7 @@
     doMenu('Help', 'About Pintora');
     window.PintoraI18n.apply();
     const about = $('.dialog .body').textContent;
-    check(about.includes('22 tools') && about.includes('8/16-bit TIFF') && about.includes('ICC profile') && about.includes('GIMP 3.2.8'), 'Acerca de no se tradujo: ' + about.slice(0, 160));
+    check(about.includes('22 tools') && about.includes('8/16-bit TIFF') && about.includes('ICC profile') && about.includes('GIMP 3.2.8') && about.includes('v011'), 'Acerca de no se tradujo: ' + about.slice(0, 160));
     await okDialog();
     P.setLang('es');
     check($('#menus .menubtn').textContent.trim() === 'Archivo', 'No se pudo volver al español');

@@ -116,10 +116,14 @@ test('16-bit XCF export keeps layers and 16-bit precision', async () => {
     w: 2, h: 1, depth: 16,
     layers: [{ name: 'Profunda', data16, opacity: 0.5, visible: true, mode: 'normal' }]
   });
+  const raw = Buffer.from(buf);
+  assert.equal(raw.subarray(0, 13).toString('latin1'), 'gimp xcf v011');
+  assert.equal(raw.readUInt32BE(26), 250);
   const xcf = await F.readXcf(buf);
   assert.equal(xcf.w, 2);
   assert.equal(xcf.h, 1);
   assert.equal(xcf.depth, 16);
+  assert.equal(xcf.precision, 250);
   assert.equal(xcf.layers.length, 1);
   assert.equal(xcf.layers[0].name, 'Profunda');
   assert.ok(Math.abs(xcf.layers[0].opacity - 0.5) < 0.02);

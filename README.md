@@ -37,9 +37,9 @@ Funciona como página suelta en el navegador y como aplicación de escritorio co
 ### Formatos
 
 - **Abrir:** PNG, JPEG, WebP, GIF (primer fotograma), BMP y SVG rasterizado según el navegador;
-  TIFF; PSD con sus capas; XCF con capas RGBA; y proyectos `.pintora.json`.
+  TIFF; PSD con sus capas; XCF con capas RGBA de 8 o 16 bits; y proyectos `.pintora.json`.
 - **Exportar:** PNG (con transparencia), JPEG, WebP, TIFF de 8 o 16 bits, GIF animado (una capa
-  visible por fotograma), PSD y XCF con capas RGBA.
+  visible por fotograma), PSD y XCF con capas RGBA de 8 o 16 bits.
 - **PSD:** importa capas, opacidad, visibilidad y los modos de mezcla equivalentes; exporta el
   documento con sus capas. Cada capa conserva su rectángulo (posición y tamaño) al importar y exportar.
 - **Proyecto:** `.pintora.json`, versión 4, con capas (incluidos sus límites y trazados), máscaras, selección,
@@ -48,12 +48,14 @@ Funciona como página suelta en el navegador y como aplicación de escritorio co
 El espacio de trabajo es de 8 bits por canal por defecto y se puede cambiar a 16 bits. La composición y
 el proyecto conservan 16 bits; el TIFF de 16 bits se importa y exporta con un perfil ICC opcional,
 pero las herramientas de píxeles, los filtros y las selecciones siguen trabajando sobre el búfer de 8 bits.
-Los XCF de 16 bits se convierten al importar y el XCF exportado es RGBA de 8 bits. Los trazados son
-vectoriales y editables en el documento, se rasterizan para pintar y se exportan a SVG. La gestión ICC
-admite perfiles RGB de matriz/TRC; los perfiles basados solo en LUT se rechazan con un mensaje claro.
-El XCF exportado conserva capas, opacidad, visibilidad, desplazamiento y modo de mezcla.
-El XCF v001 exportado se ha validado con GIMP 3.2.8: se abre como 32×24 px con las capas `Fondo` y
-`Capa propia` (opacidades 1,0 y 0,65), y exporta un PNG de 32×24.
+Los XCF de 16 bits se convierten al espacio de trabajo al importar. Al exportar, un documento de
+8 bits genera un XCF v001 y uno de 16 bits genera un XCF v011 con precisión U16_GAMMA; ambos conservan
+capas, opacidad, visibilidad, desplazamiento y modo de mezcla. Los trazados son vectoriales y editables
+en el documento, se rasterizan para pintar y se exportan a SVG. La gestión ICC admite perfiles RGB de
+matriz/TRC; los perfiles basados solo en LUT se rechazan con un mensaje claro.
+El XCF v001 de 8 bits se ha validado con GIMP 3.2.8: se abre como 32×24 px con las capas `Fondo` y
+`Capa propia` (opacidades 1,0 y 0,65), y exporta un PNG de 32×24. El XCF v011 de 16 bits se carga en
+GIMP 3.2.8 y la prueba de formatos comprueba su precisión de 16 bits.
 
 ### Pruebas
 
@@ -150,9 +152,9 @@ page in the browser and as an Electron desktop application.
 ### Formats
 
 - **Open:** PNG, JPEG, WebP, GIF (first frame), BMP and browser-rasterised SVG; TIFF; PSD with its
-  layers; XCF with RGBA layers; and `.pintora.json` projects.
+  layers; XCF with 8/16-bit RGBA layers; and `.pintora.json` projects.
 - **Export:** PNG (with transparency), JPEG, WebP, 8-bit or 16-bit TIFF, animated GIF (one frame
-  per visible layer), PSD and XCF with RGBA layers.
+  per visible layer), PSD and XCF with 8/16-bit RGBA layers.
 - **PSD:** imports layers, opacity, visibility and equivalent blend modes; exports the document with
   its layers. Each layer keeps its rectangle (position and size) on import and export.
 - **Project:** `.pintora.json`, version 4, with layers (including their bounds and paths), masks,
@@ -160,12 +162,15 @@ page in the browser and as an Electron desktop application.
 
 The working space is 8 bits per channel by default and can be switched to 16 bits. Compositing and
 the project preserve 16 bits; 16-bit TIFF is imported and exported with an optional embedded ICC
-profile, but pixel tools, filters and selections still operate on the 8-bit buffer. 16-bit XCF files are converted on import and
-exported XCF is 8-bit RGBA. Paths are vectorial and editable in the document, are rasterised for painting
+profile, but pixel tools, filters and selections still operate on the 8-bit buffer. 16-bit XCF files
+are converted to the working space on import. On export, an 8-bit document produces a v001 XCF and a
+16-bit document produces a v011 XCF with U16_GAMMA precision; both keep layers, opacity, visibility,
+offsets and blend mode. Paths are vectorial and editable in the document, are rasterised for painting
 and can be exported to SVG. ICC management supports RGB matrix/TRC profiles; LUT-only profiles are
-rejected with a clear message. Exported XCF keeps layers, opacity, visibility, offsets and blend mode.
-The exported v001 XCF has been validated with GIMP 3.2.8: it opens as 32×24 px with the `Fondo` and
-`Capa propia` layers (opacities 1.0 and 0.65) and exports a 32×24 PNG.
+rejected with a clear message.
+The 8-bit v001 XCF has been validated with GIMP 3.2.8: it opens as 32×24 px with the `Fondo` and
+`Capa propia` layers (opacities 1.0 and 0.65) and exports a 32×24 PNG. The 16-bit v011 XCF loads in
+GIMP 3.2.8, and the formats test checks its 16-bit precision.
 
 ### Tests
 

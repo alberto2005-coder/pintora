@@ -1920,7 +1920,7 @@ const PintoraEngine = window.PintoraEngine;
     'Abre PNG, JPEG, WebP, TIFF de 8 o 16 bits, GIF, PSD y XCF con capas RGBA, y exporta además SVG. Los proyectos .pintora.json v4 conservan capas, límites, máscaras, selección, colores, trazados, perfil ICC y precisión de 16 bits. El autoguardado recupera la sesión anterior al volver a abrir la aplicación.': 'It opens PNG, JPEG, WebP, 8/16-bit TIFF, GIF, PSD and XCF with RGBA layers, and also exports SVG. .pintora.json v4 projects keep layers, bounds, masks, selection, colours, paths, ICC profile and 16-bit precision. Autosave recovers the previous session when you reopen the application.',
     'Las fórmulas de los modos de mezcla y la composición por capas siguen el comportamiento del código fuente de GIMP 3 (GPL). Pintora no está afiliado a GIMP ni al proyecto GNOME. Si distribuyes una versión compilada, hazlo bajo GPL-3.0-or-later y ofrece el código fuente.': 'Blend-mode formulas and layer compositing follow the behaviour of the GIMP 3 source code (GPL). Pintora is not affiliated with GIMP or the GNOME project. If you distribute a compiled build, do so under GPL-3.0-or-later and provide the source code.',
     'La interfaz está disponible en español e inglés. La composición y los proyectos conservan 16 bits, pero las herramientas de píxeles, los filtros y las selecciones trabajan sobre el búfer de 8 bits. Los trazados vectoriales se editan y exportan a SVG, y los perfiles ICC RGB con matrices/TRC se convierten a sRGB; los perfiles basados solo en LUT se rechazan para no aplicar una conversión incorrecta.': 'The interface is available in Spanish and English. Compositing and projects preserve 16 bits, but pixel tools, filters and selections work on the 8-bit buffer. Vector paths can be edited and exported to SVG, and RGB ICC profiles using matrices/TRC are converted to sRGB; profiles based only on LUTs are rejected rather than converted incorrectly.',
-    'El XCF v001 exportado se ha validado con GIMP 3.2.8: se abre como 32×24 px con las capas Fondo y Capa propia, opacidades 1,0 y 0,65, y exporta un PNG de 32×24.': 'The exported v001 XCF has been validated with GIMP 3.2.8: it opens as 32×24 px with the Fondo and Capa propia layers, opacities 1.0 and 0.65, and exports a 32×24 PNG.',
+    'El XCF v001 de 8 bits se ha validado con GIMP 3.2.8: se abre como 32×24 px con las capas Fondo y Capa propia, opacidades 1,0 y 0,65, y exporta un PNG de 32×24. El XCF v011 de 16 bits se carga en GIMP 3.2.8 y la prueba de formatos comprueba su precisión de 16 bits.': 'The 8-bit v001 XCF has been validated with GIMP 3.2.8: it opens as 32×24 px with the Fondo and Capa propia layers, opacities 1.0 and 0.65, and exports a 32×24 PNG. The 16-bit v011 XCF loads in GIMP 3.2.8, and the formats test checks its 16-bit precision.',
     'El perfil ICC usa una transformación LUT no compatible.': 'The ICC profile uses an unsupported LUT transform.', 'No se pudo aplicar el perfil ICC.': 'The ICC profile could not be applied.', 'Perfil ICC convertido: ': 'ICC profile converted: '
   };
 
@@ -2475,9 +2475,10 @@ const PintoraEngine = window.PintoraEngine;
   }
 
   /* XCF ------------------------------------------------------------------
-   * Pintora writes XCF v001 (32-bit offsets, 8-bit RGBA, RLE tiles). The
-   * reader uses the maintained xcfreader package and converts any supported
-   * precision to the editor's 8-bit working space. */
+   * Pintora writes XCF v001 (32-bit offsets, 8-bit RGBA, RLE tiles) for 8-bit
+   * documents and v011 (64-bit offsets, 16-bit RGBA, U16_GAMMA precision) for
+   * 16-bit documents. The reader uses the maintained xcfreader package and
+   * converts any supported precision to the editor's 8-bit working space. */
   const TO_XCF_MODE = {
     normal: 0, dissolve: 1, behind: 2, multiply: 3, screen: 4, overlay: 5, difference: 6,
     addition: 7, subtract: 8, darken_only: 9, lighten_only: 10, hsv_hue: 11,
@@ -2494,15 +2495,17 @@ const PintoraEngine = window.PintoraEngine;
   function xcfU32(a, n) { a.push((n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255); }
   function xcfI32(a, n) { xcfU32(a, n < 0 ? n + 0x100000000 : n); }
   function xcfPatchU32(a, at, n) { a[at] = (n >>> 24) & 255; a[at + 1] = (n >>> 16) & 255; a[at + 2] = (n >>> 8) & 255; a[at + 3] = n & 255; }
+  function xcfU64(a, n) { xcfU32(a, Math.floor(n / 0x100000000)); xcfU32(a, n >>> 0); }
+  function xcfPatchU64(a, at, n) { xcfPatchU32(a, at, Math.floor(n / 0x100000000)); xcfPatchU32(a, at + 4, n >>> 0); }
   function xcfProp(a, type, data) { xcfU32(a, type); xcfU32(a, data.length); a.push(...data); }
 
-  function xcfRleChannel(data, w, h, channel) {
-    const out = [], n = w * h;
+  function xcfRlePlane(data, n, plane, bpp) {
+    const out = [];
     let i = 0;
     while (i < n) {
-      const v = data[i * 4 + channel];
+      const v = data[i * bpp + plane];
       let run = 1;
-      while (i + run < n && run < 32767 && data[(i + run) * 4 + channel] === v) run++;
+      while (i + run < n && run < 32767 && data[(i + run) * bpp + plane] === v) run++;
       if (run >= 2) {
         if (run <= 127) out.push(run - 1, v);
         else { out.push(127, (run >>> 8) & 255, run & 255, v); }
@@ -2510,9 +2513,9 @@ const PintoraEngine = window.PintoraEngine;
       } else {
         const lit = [];
         while (i < n && lit.length < 127) {
-          const cv = data[i * 4 + channel];
+          const cv = data[i * bpp + plane];
           let same = 1;
-          while (i + same < n && same < 3 && data[(i + same) * 4 + channel] === cv) same++;
+          while (i + same < n && same < 3 && data[(i + same) * bpp + plane] === cv) same++;
           if (same >= 3 && lit.length) break;
           lit.push(cv); i++;
           if (same >= 3) break;
@@ -2523,33 +2526,67 @@ const PintoraEngine = window.PintoraEngine;
     return out;
   }
 
-  function xcfTile(data, layerW, layerH, x0, y0, tw, th) {
+  function xcfTile8(data, layerW, layerH, x0, y0, tw, th) {
     const tile = new Uint8ClampedArray(tw * th * 4);
     for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) {
       const si = ((y + y0) * layerW + x + x0) * 4, di = (y * tw + x) * 4;
       tile[di] = data[si]; tile[di + 1] = data[si + 1]; tile[di + 2] = data[si + 2]; tile[di + 3] = data[si + 3];
     }
     const out = [];
-    for (let ch = 0; ch < 4; ch++) out.push(...xcfRleChannel(tile, tw, th, ch));
+    for (let ch = 0; ch < 4; ch++) out.push(...xcfRlePlane(tile, tw * th, ch, 4));
     return out;
   }
 
-  /** Serialize bottom-to-top editor layers as an XCF file (v001, RGBA, RLE). */
+  function xcfTile16(data, layerW, layerH, x0, y0, tw, th) {
+    const tile = new Uint8Array(tw * th * 8);
+    for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) {
+      const si = ((y + y0) * layerW + x + x0) * 4, di = (y * tw + x) * 8;
+      for (let ch = 0; ch < 4; ch++) {
+        const v = data[si + ch];
+        tile[di + ch * 2] = v >>> 8;
+        tile[di + ch * 2 + 1] = v & 255;
+      }
+    }
+    const out = [];
+    for (let plane = 0; plane < 8; plane++) out.push(...xcfRlePlane(tile, tw * th, plane, 8));
+    return out;
+  }
+
+  /** Serialize bottom-to-top editor layers as an XCF file (RGBA, RLE). 8-bit uses v001; 16-bit uses v011 with 64-bit pointers. */
   function writeXcf(doc) {
+    const depth = doc.depth === 16 ? 16 : 8;
+    const bpp = depth === 16 ? 8 : 4;
+    const ptr64 = depth === 16;
+    const addPtr = (a) => {
+      const at = a.length;
+      if (ptr64) xcfU64(a, 0); else xcfU32(a, 0);
+      return at;
+    };
+    const patchPtr = (a, at, n) => {
+      if (ptr64) xcfPatchU64(a, at, n); else xcfPatchU32(a, at, n);
+    };
     const layers = (doc.layers || []).slice().reverse();
     const header = [];
-    header.push(...xcfBytes('gimp xcf '), ...xcfBytes('v001'), 0);
+    header.push(...xcfBytes('gimp xcf '), ...xcfBytes(ptr64 ? 'v011' : 'v001'), 0);
     xcfU32(header, doc.w); xcfU32(header, doc.h); xcfU32(header, 0);
+    if (ptr64) xcfU32(header, 250); // U16_GAMMA
     xcfU32(header, 0); xcfU32(header, 0); // image property list END
     const layerPtrSlots = [];
-    for (let i = 0; i < layers.length; i++) { layerPtrSlots.push(header.length); xcfU32(header, 0); }
-    xcfU32(header, 0); // layer list terminator
-    xcfU32(header, 0); // channel list terminator
+    for (let i = 0; i < layers.length; i++) layerPtrSlots.push(addPtr(header));
+    addPtr(header); // layer list terminator
+    addPtr(header); // channel list terminator
 
     let total = header.length;
     const chunks = [];
     for (const l of layers) {
-      const w = l.w || doc.w, h = l.h || doc.h, data = l.data;
+      const w = l.w || doc.w, h = l.h || doc.h;
+      const data = depth === 16
+        ? (l.data16 instanceof Uint16Array ? l.data16 : (() => {
+          const a = new Uint16Array(w * h * 4);
+          for (let i = 0; i < a.length; i++) a[i] = (l.data && l.data[i] ? l.data[i] : 0) * 257;
+          return a;
+        })())
+        : (l.data || new Uint8ClampedArray(w * h * 4));
       const name = Array.from(new TextEncoder().encode(l.name || 'Capa')).concat(0);
       const lb = [];
       xcfU32(lb, w); xcfU32(lb, h); xcfU32(lb, 1); xcfU32(lb, name.length); lb.push(...name);
@@ -2560,25 +2597,26 @@ const PintoraEngine = window.PintoraEngine;
       xcfProp(lb, 10, (() => { const a = []; xcfU32(a, l.lockAlpha ? 1 : 0); return a; })());
       xcfProp(lb, 17, [1]);
       xcfU32(lb, 0); xcfU32(lb, 0); // END property
-      const hptrSlot = lb.length; xcfU32(lb, 0); xcfU32(lb, 0);
+      const hptrSlot = lb.length; addPtr(lb); addPtr(lb); // hierarchy, mask
       const layerStart = total;
       const hierStart = layerStart + lb.length;
-      const levelStart = hierStart + 16;
-      xcfPatchU32(lb, hptrSlot, hierStart);
+      const levelStart = hierStart + 12 + (ptr64 ? 8 : 4);
+      patchPtr(lb, hptrSlot, hierStart);
 
-      const hier = []; xcfU32(hier, w); xcfU32(hier, h); xcfU32(hier, 4); xcfU32(hier, levelStart);
+      const hier = []; xcfU32(hier, w); xcfU32(hier, h); xcfU32(hier, bpp);
+      const lptrSlot = addPtr(hier); patchPtr(hier, lptrSlot, levelStart);
       const level = []; xcfU32(level, w); xcfU32(level, h);
       const across = Math.ceil(w / 64), down = Math.ceil(h / 64), tileSlots = [];
-      for (let i = 0; i < across * down; i++) { tileSlots.push(level.length); xcfU32(level, 0); }
-      xcfU32(level, 0);
+      for (let i = 0; i < across * down; i++) tileSlots.push(addPtr(level));
+      addPtr(level);
       const tileStart = levelStart + level.length;
       const tiles = [];
       for (let ty = 0; ty < down; ty++) for (let tx = 0; tx < across; tx++) {
         const tw = Math.min(64, w - tx * 64), th = Math.min(64, h - ty * 64);
-        xcfPatchU32(level, tileSlots[ty * across + tx], tileStart + tiles.length);
-        tiles.push(...xcfTile(data, w, h, tx * 64, ty * 64, tw, th));
+        patchPtr(level, tileSlots[ty * across + tx], tileStart + tiles.length);
+        tiles.push(...(depth === 16 ? xcfTile16(data, w, h, tx * 64, ty * 64, tw, th) : xcfTile8(data, w, h, tx * 64, ty * 64, tw, th)));
       }
-      xcfPatchU32(header, layerPtrSlots[layers.indexOf(l)], layerStart);
+      patchPtr(header, layerPtrSlots[layers.indexOf(l)], layerStart);
       const chunk = lb.concat(hier, level, tiles);
       chunks.push(chunk); total += chunk.length;
     }
@@ -3287,7 +3325,8 @@ async function openXcf(file, asLayers) {
 async function saveXcf() {
   const d = S.doc; flushDirty();
   const buffer = PintoraFormats.writeXcf({
-    w: d.w, h: d.h, layers: d.layers.map((l) => ({ name: l.name, data: l.data, opacity: l.opacity, visible: l.visible, mode: l.mode, x: l.x, y: l.y, w: l.w, h: l.h, lockAlpha: l.lockAlpha }))
+    w: d.w, h: d.h, depth: d.depth,
+    layers: d.layers.map((l) => ({ name: l.name, data: l.data, data16: l.data16, opacity: l.opacity, visible: l.visible, mode: l.mode, x: l.x, y: l.y, w: l.w, h: l.h, lockAlpha: l.lockAlpha }))
   });
   await saveBlob(baseName() + '.xcf', new Blob([buffer], { type: 'image/x-xcf' }));
 }
@@ -4360,7 +4399,7 @@ function aboutDialog() {
     { type: 'info', text: 'Abre PNG, JPEG, WebP, TIFF de 8 o 16 bits, GIF, PSD y XCF con capas RGBA, y exporta además SVG. Los proyectos .pintora.json v4 conservan capas, límites, máscaras, selección, colores, trazados, perfil ICC y precisión de 16 bits. El autoguardado recupera la sesión anterior al volver a abrir la aplicación.' },
     { type: 'info', text: 'Las fórmulas de los modos de mezcla y la composición por capas siguen el comportamiento del código fuente de GIMP 3 (GPL). Pintora no está afiliado a GIMP ni al proyecto GNOME. Si distribuyes una versión compilada, hazlo bajo GPL-3.0-or-later y ofrece el código fuente.' },
     { type: 'info', text: 'La interfaz está disponible en español e inglés. La composición y los proyectos conservan 16 bits, pero las herramientas de píxeles, los filtros y las selecciones trabajan sobre el búfer de 8 bits. Los trazados vectoriales se editan y exportan a SVG, y los perfiles ICC RGB con matrices/TRC se convierten a sRGB; los perfiles basados solo en LUT se rechazan para no aplicar una conversión incorrecta.' },
-    { type: 'info', text: 'El XCF v001 exportado se ha validado con GIMP 3.2.8: se abre como 32×24 px con las capas Fondo y Capa propia, opacidades 1,0 y 0,65, y exporta un PNG de 32×24.' }
+    { type: 'info', text: 'El XCF v001 de 8 bits se ha validado con GIMP 3.2.8: se abre como 32×24 px con las capas Fondo y Capa propia, opacidades 1,0 y 0,65, y exporta un PNG de 32×24. El XCF v011 de 16 bits se carga en GIMP 3.2.8 y la prueba de formatos comprueba su precisión de 16 bits.' }
   ] });
 }
 
