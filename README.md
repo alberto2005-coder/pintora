@@ -11,6 +11,7 @@ Funciona como página suelta en el navegador y como aplicación de escritorio co
 
 - Abre `dist/pintora.html` en un navegador moderno (no necesita servidor).
 - `npm run build` regenera `dist/` a partir de `src/`.
+- `npm run build:pages` regenera `dist/` y copia la aplicación a `docs/` para GitHub Pages.
 - `npm test` ejecuta las 66 pruebas unitarias del motor, formatos, ICC y trazados (Node 20 o superior).
 - `npm run test:ui` reconstruye `dist/` y ejecuta las 31 pruebas de interfaz en Electron.
 - `npm run test:app` reconstruye `dist/` y ejecuta las 4 pruebas exclusivas del ejecutable Electron.
@@ -121,6 +122,12 @@ También hay `dist:mac` y `dist:linux`. Las librerías de formato (`ag-psd`, `ut
 `gifenc` y `@theprogrammingiantpanda/xcfreader`) se empaquetan dentro del HTML con esbuild desde
 `src/vendor.js`.
 
+### GitHub Pages
+
+`npm run build:pages` reconstruye `dist/` y copia la aplicación a `docs/index.html`. En GitHub,
+abre **Settings → Pages**, elige **Deploy from a branch**, la rama `master` y la carpeta `/docs`.
+La aplicación quedará en `https://<usuario>.github.io/pintora/`.
+
 ### Documentación
 
 - [Pruebas y verificación manual](docs/PRUEBAS.md)
@@ -142,6 +149,7 @@ page in the browser and as an Electron desktop application.
 
 - Open `dist/pintora.html` in a modern browser (no server required).
 - `npm run build` regenerates `dist/` from `src/`.
+- `npm run build:pages` rebuilds `dist/` and copies the app to `docs/` for GitHub Pages.
 - `npm test` runs the 66 unit tests for the engine, formats, ICC and paths (Node 20 or newer).
 - `npm run test:ui` rebuilds `dist/` and runs the 31 interface tests in Electron.
 - `npm run test:app` rebuilds `dist/` and runs the 4 executable-only Electron tests.
@@ -251,6 +259,12 @@ npm run dist:win     # NSIS installer and portable build in release/
 `dist:mac` and `dist:linux` are also available. Format libraries (`ag-psd`, `utif`, `omggif`,
 `gifenc` and `@theprogrammingiantpanda/xcfreader`) are bundled into the HTML by esbuild from
 `src/vendor.js`.
+
+### GitHub Pages
+
+`npm run build:pages` rebuilds `dist/` and copies the app to `docs/index.html`. In GitHub, open
+**Settings → Pages**, choose **Deploy from a branch**, branch `master` and folder `/docs`.
+The app will be available at `https://<user>.github.io/pintora/`.
 
 ### Documentation
 

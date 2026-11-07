@@ -7,6 +7,7 @@
   "author": "Pintora",
   "scripts": {
     "build": "node build.mjs",
+    "build:pages": "node build.mjs && node scripts/build-pages.mjs",
     "icons": "electron scripts/make-icons.cjs",
     "test": "node --test test/",
     "test:ui": "node build.mjs && electron test-ui/run.cjs",
