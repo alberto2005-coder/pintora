@@ -14,12 +14,13 @@ npm run test:all  # las tres suites
 ```
 
 `npm run test:ui` y `npm run test:app` reconstruyen `dist/pintora.html` antes de arrancar Electron.
+Resultado actual: 66 pruebas unitarias, 31 de interfaz y 4 del ejecutable.
 
 ### Cobertura automatizada
 
-- **Unitarias:** composición por capas, 35 modos de mezcla, selecciones, máscaras, pincel, filtros,
-  curvas, histograma, historial, PSD, TIFF de 8/16 bits con perfil ICC, GIF, XCF, trazados vectoriales
-  y conversión de perfiles ICC RGB de matriz/TRC.
+- **Unitarias (66):** composición por capas, 35 modos de mezcla, selecciones, máscaras, pincel, filtros,
+  curvas, histograma, historial, PSD, TIFF de 8/16 bits con perfil ICC, GIF, XCF v001/v011 (incluida
+  cabecera y precisión de 16 bits), trazados vectoriales y conversión de perfiles ICC RGB de matriz/TRC.
 - **Interfaz:** 31 casos sobre el HTML construido; menús, herramientas, botones de capa, paneles
   desplegables, capas con límites, máscaras, pintura, selección mágica, texto, filtros,
   transformaciones, temas, proyecto v4, trazados vectoriales y SVG, XCF, idioma español/inglés de
@@ -42,6 +43,8 @@ Estas acciones dependen de la interfaz del sistema operativo o del entorno y no 
 - Abrir los XCF exportados con GIMP 3.2.8 y comprobar dimensiones, capas, opacidades y exportación a
   PNG; validado el v001 de 8 bits con 32×24 px, `Fondo` al 100 %, `Capa propia` al 65,098 % y PNG de
   32×24. El v011 de 16 bits se carga en GIMP 3.2.8 y la prueba de formatos comprueba su precisión.
+  La exportación PNG desde GIMP del XCF de 16 bits no se ha completado; `npm test` verifica la
+  cabecera v011 y la precisión 250, pero no sustituye esa prueba manual.
 - Abrir un archivo con el selector nativo de Windows, macOS o Linux.
 - Arrastrar un archivo desde el Explorador o Finder.
 - Copiar una imagen desde otra aplicación y pegarla en Pintora, y al revés.
@@ -75,12 +78,13 @@ npm run test:all  # all three suites
 ```
 
 `npm run test:ui` and `npm run test:app` rebuild `dist/pintora.html` before starting Electron.
+Current result: 66 unit tests, 31 interface tests and 4 executable tests.
 
 ### Automated coverage
 
-- **Unit tests:** layer compositing, 35 blend modes, selections, masks, brush, filters, curves,
-  histogram, history, PSD, 8/16-bit TIFF with an ICC profile, GIF, XCF, vector paths and conversion
-  of RGB matrix/TRC ICC profiles.
+- **Unit tests (66):** layer compositing, 35 blend modes, selections, masks, brush, filters, curves,
+  histogram, history, PSD, 8/16-bit TIFF with an ICC profile, GIF, XCF v001/v011 (including header
+  and 16-bit precision), vector paths and conversion of RGB matrix/TRC ICC profiles.
 - **Interface:** 31 cases on the built HTML; menus, tools, layer buttons, collapsible panels, layers
   with bounds, masks, painting, magic selection, text, filters, transforms, themes, v4 projects, vector
   paths and SVG, XCF, Spanish/English menus, modes, filters, shortcuts and messages, and exports with a
@@ -101,7 +105,9 @@ These actions depend on the operating system interface or environment and are no
 
 - Opening the exported XCFs with GIMP 3.2.8 and checking dimensions, layers, opacities and PNG export;
   the 8-bit v001 was validated at 32×24 px, `Fondo` at 100%, `Capa propia` at 65.098% and a 32×24 PNG.
-  The 16-bit v011 loads in GIMP 3.2.8, and the formats test checks its precision.
+  The 16-bit v011 loads in GIMP 3.2.8, and the formats test checks its precision. PNG export from GIMP
+  for the 16-bit XCF has not been completed; `npm test` verifies the v011 header and precision 250,
+  but does not replace that manual check.
 - Opening a file with the native Windows, macOS or Linux file picker.
 - Dragging a file from Explorer or Finder.
 - Copying an image from another application into Pintora and vice versa.

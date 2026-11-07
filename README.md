@@ -11,15 +11,19 @@ Funciona como página suelta en el navegador y como aplicación de escritorio co
 
 - Abre `dist/pintora.html` en un navegador moderno (no necesita servidor).
 - `npm run build` regenera `dist/` a partir de `src/`.
-- `npm test` ejecuta los tests del motor y de formatos (Node 20 o superior).
+- `npm test` ejecuta las 66 pruebas unitarias del motor, formatos, ICC y trazados (Node 20 o superior).
 - `npm run test:ui` reconstruye `dist/` y ejecuta las 31 pruebas de interfaz en Electron.
 - `npm run test:app` reconstruye `dist/` y ejecuta las 4 pruebas exclusivas del ejecutable Electron.
 - `npm run test:all` encadena los tests unitarios, los de interfaz y los del ejecutable.
 - `npm start` abre la app de escritorio sin empaquetar.
 
+Requiere Node 20 o superior y npm. Las suites de Electron necesitan una sesión gráfica; en Linux sin
+escritorio, ejecútalas con `xvfb-run`.
+
 ### Qué incluye
 
 - Capas con opacidad, visibilidad, bloqueo de transparencia, máscaras y 35 modos de mezcla.
+- Profundidad de 8 o 16 bits por canal, con composición y proyectos que conservan 16 bits.
 - Capas con tamaño y posición propios: importa una imagen como capa sin recortarla, muévela total o
   parcialmente fuera del lienzo y pinta con sus coordenadas locales.
 - Selecciones rectangular, elíptica, libre, por color y varita mágica, con modos de combinación.
@@ -37,7 +41,7 @@ Funciona como página suelta en el navegador y como aplicación de escritorio co
 ### Formatos
 
 - **Abrir:** PNG, JPEG, WebP, GIF (primer fotograma), BMP y SVG rasterizado según el navegador;
-  TIFF; PSD con sus capas; XCF con capas RGBA de 8 o 16 bits; y proyectos `.pintora.json`.
+  TIFF de 8 o 16 bits; PSD con sus capas; XCF con capas RGBA de 8 o 16 bits; y proyectos `.pintora.json`.
 - **Exportar:** PNG (con transparencia), JPEG, WebP, TIFF de 8 o 16 bits, GIF animado (una capa
   visible por fotograma), PSD y XCF con capas RGBA de 8 o 16 bits.
 - **PSD:** importa capas, opacidad, visibilidad y los modos de mezcla equivalentes; exporta el
@@ -57,11 +61,19 @@ El XCF v001 de 8 bits se ha validado con GIMP 3.2.8: se abre como 32×24 px con 
 `Capa propia` (opacidades 1,0 y 0,65), y exporta un PNG de 32×24. El XCF v011 de 16 bits se carga en
 GIMP 3.2.8 y la prueba de formatos comprueba su precisión de 16 bits.
 
+### Limitaciones actuales
+
+- Las herramientas de píxeles, los filtros y las selecciones trabajan sobre el búfer de 8 bits; el
+  16 bits nativo en esas operaciones sigue pendiente.
+- Los perfiles ICC RGB de matriz/TRC se convierten a sRGB; los basados solo en LUT se rechazan.
+- La validación con GIMP 3.2.8 del XCF de 16 bits cubre la carga; la exportación PNG desde GIMP para
+  ese archivo no está automatizada.
+
 ### Pruebas
 
 | Comando | Qué comprueba |
 |---|---|
-| `npm test` | Motor, composición, selecciones, filtros, historial y formatos. |
+| `npm test` | 66 pruebas unitarias: motor, composición, selecciones, filtros, historial, ICC, trazados y formatos. |
 | `npm run test:ui` | Interfaz sobre el HTML construido en Electron: 31 casos, viewports de 1440×900, 1920×1080 y 800×700, botones, capas, herramientas, selección mágica, temas, trazados vectoriales, XCF, idioma y exportaciones con guardado simulado. |
 | `npm run test:app` | Ejecutable Electron real: ventana de producción, descargas reales (incluido XCF) a una carpeta temporal, apertura desde disco, IndexedDB, autoguardado y recuperación. |
 | `npm run test:all` | Las tres suites anteriores en orden. |
@@ -76,6 +88,9 @@ comprobaciones son manuales y están descritas en [docs/PRUEBAS.md](docs/PRUEBAS
 - `src/engine.js`: motor sin DOM (mezcla, selecciones, pincel, filtros, curvas, histograma,
   documento e historial).
 - `src/formats.js`: conversión sin DOM entre el modelo y PSD, TIFF (8 y 16 bits), GIF y XCF.
+- `src/icc.js`: conversión de perfiles ICC RGB de matriz/TRC a sRGB.
+- `src/i18n.js`: traducción de la interfaz al inglés.
+- `src/paths.js`: geometría, hit testing y serialización SVG de trazados.
 - `src/app-core.js`: estado, vista, render, importar/exportar, portapapeles, autoguardado, texto.
 - `src/app-tools.js`: herramientas y entrada de puntero.
 - `src/app-ui.js`: diálogos, paneles, menús, atajos y arranque.
@@ -84,7 +99,7 @@ comprobaciones son manuales y están descritas en [docs/PRUEBAS.md](docs/PRUEBAS
 - `build.mjs`: une todo en un solo HTML.
 - `electron/main.js`: ciclo de vida de la aplicación de escritorio.
 - `electron/window.js`: configuración compartida de la ventana nativa.
-- `test/engine.test.js`, `test/formats.test.js`: tests del motor y de los formatos.
+- `test/engine.test.js`, `test/formats.test.js`, `test/icc.test.js`, `test/paths.test.js`: pruebas unitarias del motor, formatos, ICC y trazados.
 - `test-ui/run.cjs`, `test-ui/suite.js`: suite de interfaz con guardado simulado.
 - `test-app/run.cjs`: suite exclusiva del ejecutable, con descargas y persistencia reales.
 
@@ -103,7 +118,8 @@ npm run dist:win     # instalador NSIS y versión portable en release/
 ```
 
 También hay `dist:mac` y `dist:linux`. Las librerías de formato (`ag-psd`, `utif`, `omggif`,
-`gifenc`) se empaquetan dentro del HTML con esbuild desde `src/vendor.js`.
+`gifenc` y `@theprogrammingiantpanda/xcfreader`) se empaquetan dentro del HTML con esbuild desde
+`src/vendor.js`.
 
 ### Documentación
 
@@ -126,15 +142,19 @@ page in the browser and as an Electron desktop application.
 
 - Open `dist/pintora.html` in a modern browser (no server required).
 - `npm run build` regenerates `dist/` from `src/`.
-- `npm test` runs the engine and format tests (Node 20 or newer).
+- `npm test` runs the 66 unit tests for the engine, formats, ICC and paths (Node 20 or newer).
 - `npm run test:ui` rebuilds `dist/` and runs the 31 interface tests in Electron.
 - `npm run test:app` rebuilds `dist/` and runs the 4 executable-only Electron tests.
 - `npm run test:all` runs the unit, interface and executable suites in order.
 - `npm start` opens the desktop app without packaging it.
 
+Node 20 or newer and npm are required. The Electron suites need a graphical session; on headless
+Linux, run them with `xvfb-run`.
+
 ### What it includes
 
 - Layers with opacity, visibility, transparency lock, masks and 35 blend modes.
+- 8 or 16 bits per channel, with compositing and projects that preserve 16 bits.
 - Layers with their own size and position: import an image as a layer without cropping it, move it
   fully or partially outside the canvas and paint in local layer coordinates.
 - Rectangular, elliptical, freehand, colour and magic-wand selections, with combination modes.
@@ -151,7 +171,7 @@ page in the browser and as an Electron desktop application.
 
 ### Formats
 
-- **Open:** PNG, JPEG, WebP, GIF (first frame), BMP and browser-rasterised SVG; TIFF; PSD with its
+- **Open:** PNG, JPEG, WebP, GIF (first frame), BMP and browser-rasterised SVG; 8/16-bit TIFF; PSD with its
   layers; XCF with 8/16-bit RGBA layers; and `.pintora.json` projects.
 - **Export:** PNG (with transparency), JPEG, WebP, 8-bit or 16-bit TIFF, animated GIF (one frame
   per visible layer), PSD and XCF with 8/16-bit RGBA layers.
@@ -172,11 +192,19 @@ The 8-bit v001 XCF has been validated with GIMP 3.2.8: it opens as 32×24 px wit
 `Capa propia` layers (opacities 1.0 and 0.65) and exports a 32×24 PNG. The 16-bit v011 XCF loads in
 GIMP 3.2.8, and the formats test checks its 16-bit precision.
 
+### Current limitations
+
+- Pixel tools, filters and selections operate on the 8-bit buffer; native 16-bit support for those
+  operations is still pending.
+- RGB ICC profiles using matrix/TRC are converted to sRGB; LUT-only profiles are rejected.
+- GIMP 3.2.8 validation of the 16-bit XCF covers loading; PNG export from GIMP for that file is not
+  automated.
+
 ### Tests
 
 | Command | What it checks |
 |---|---|
-| `npm test` | Engine, compositing, selections, filters, history and formats. |
+| `npm test` | 66 unit tests: engine, compositing, selections, filters, history, ICC, paths and formats. |
 | `npm run test:ui` | Interface on the built HTML in Electron: 31 cases, 1440×900, 1920×1080 and 800×700 viewports, buttons, layers, tools, magic selection, themes, vector paths, XCF, language and exports with a simulated save dialog. |
 | `npm run test:app` | Real Electron executable: production window, real downloads (including XCF) to a temporary folder, opening files from disk, IndexedDB, autosave and recovery. |
 | `npm run test:all` | All three suites in order. |
@@ -191,6 +219,9 @@ documented in [docs/PRUEBAS.md](docs/PRUEBAS.md).
 - `src/engine.js`: DOM-free engine (blending, selections, brush, filters, curves, histogram, document
   and history).
 - `src/formats.js`: DOM-free conversion between the model and PSD, 8/16-bit TIFF, GIF and XCF.
+- `src/icc.js`: conversion of RGB matrix/TRC ICC profiles to sRGB.
+- `src/i18n.js`: English interface translation.
+- `src/paths.js`: vector path geometry, hit testing and SVG serialisation.
 - `src/app-core.js`: state, view, rendering, import/export, clipboard, autosave and text.
 - `src/app-tools.js`: tools and pointer input.
 - `src/app-ui.js`: dialogs, panels, menus, shortcuts and boot.
@@ -199,7 +230,7 @@ documented in [docs/PRUEBAS.md](docs/PRUEBAS.md).
 - `build.mjs`: combines everything into one HTML file.
 - `electron/main.js`: desktop application lifecycle.
 - `electron/window.js`: shared native window configuration.
-- `test/engine.test.js`, `test/formats.test.js`: engine and format tests.
+- `test/engine.test.js`, `test/formats.test.js`, `test/icc.test.js`, `test/paths.test.js`: unit tests for the engine, formats, ICC and paths.
 - `test-ui/run.cjs`, `test-ui/suite.js`: interface suite with a simulated save dialog.
 - `test-app/run.cjs`: executable-only suite with real downloads and persistence.
 
@@ -218,7 +249,8 @@ npm run dist:win     # NSIS installer and portable build in release/
 ```
 
 `dist:mac` and `dist:linux` are also available. Format libraries (`ag-psd`, `utif`, `omggif`,
-`gifenc`) are bundled into the HTML by esbuild from `src/vendor.js`.
+`gifenc` and `@theprogrammingiantpanda/xcfreader`) are bundled into the HTML by esbuild from
+`src/vendor.js`.
 
 ### Documentation
 
