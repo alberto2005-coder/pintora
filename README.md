@@ -33,7 +33,7 @@
 
 ### Demo
 
-**Pruébalo:** <http://albertoortiz.is-a.dev/pintora/>
+**Pruébalo:** <https://albertoortiz.is-a.dev/pintora/>
 
 ### Inicio rápido
 
@@ -187,7 +187,7 @@ Pintora no está afiliado a GIMP ni al proyecto GNOME.
 
 ### Demo
 
-**Try it:** <http://albertoortiz.is-a.dev/pintora/>
+**Try it:** <https://albertoortiz.is-a.dev/pintora/>
 
 ### Quick start
 
